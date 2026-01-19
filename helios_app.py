@@ -7,6 +7,7 @@ from google.genai.types import Content, Part
 from PIL import Image
 import io
 import re
+import urllib.parse
 
 # --- CONFIGURAÇÃO VISUAL TRON ---
 st.set_page_config(page_title="HELIOS | SYSTEM", page_icon="🟡", layout="wide")
@@ -17,14 +18,31 @@ st.markdown("""
     
     .stApp { background-color: #000000; color: #FFD700; font-family: 'Share Tech Mono', monospace; }
     
-    /* Tabs (Abas) */
-    .stTabs [data-baseweb="tab-list"] { gap: 10px; }
-    .stTabs [data-baseweb="tab"] {
-        height: 50px; background-color: #0a0a0a; border: 1px solid #FFD700; color: #FFD700;
-        border-radius: 0px; text-transform: uppercase;
+    /* --- ESTILO DAS ABAS (CORRIGIDO) --- */
+    /* Remove a barra superior padrão das abas */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
+        background-color: transparent;
     }
+    
+    /* Aba Não Selecionada */
+    .stTabs [data-baseweb="tab"] {
+        height: 50px;
+        background-color: #111111;
+        color: #FFD700;
+        border: 1px solid #FFD700;
+        border-radius: 0px;
+        text-transform: uppercase;
+        font-family: 'Share Tech Mono', monospace;
+        font-size: 18px;
+    }
+    
+    /* Aba Selecionada (Onde estava invisível) */
     .stTabs [data-baseweb="tab"][aria-selected="true"] {
-        background-color: #FFD700; color: #000000; font-weight: bold;
+        background-color: #FFD700 !important;
+        color: #000000 !important;
+        font-weight: bold;
+        border: 1px solid #FFD700;
     }
     
     /* Inputs e Botões */
@@ -42,20 +60,15 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- SIDEBAR (CONFIGURAÇÕES GERAIS) ---
+# --- SIDEBAR ---
 with st.sidebar:
-    st.title("🟡 HELIOS v5.0")
+    st.title("🟡 HELIOS v5.1")
     api_key = st.text_input("CHAVE DE ACESSO (API KEY)", type="password")
-    
     st.markdown("---")
     st.header(">> SISTEMA")
     voz_ativa = st.toggle("SINTETIZADOR DE VOZ", value=True)
-    # Nova voz: Donato (Mais natural que Antonio)
-    VOZ_MODELO = "pt-BR-DonatoNeural" 
-    
     st.info("DOMÍNIO: HELIOS.IA.BR")
 
-# --- LÓGICA DO CÉREBRO ---
 if not api_key:
     st.warning(">> ALERTA: INSIRA A CHAVE DE ACESSO PARA INICIAR.")
     st.stop()
@@ -63,28 +76,46 @@ if not api_key:
 client = genai.Client(api_key=api_key, http_options={"api_version": "v1alpha"})
 MODELO = "gemini-2.0-flash-exp"
 
-# --- FUNÇÕES ---
+# --- SISTEMA DE VOZ HÍBRIDO (NEURAL + WEB) ---
 
 async def gerar_audio_neural(texto):
-    """Gera áudio com a voz Donato Neural"""
-    OUTPUT_FILE = "helios_response.mp3"
-    communicate = edge_tts.Communicate(texto, VOZ_MODELO)
+    """Tenta gerar áudio Neural (Microsoft)"""
+    OUTPUT_FILE = "helios_neural.mp3"
+    # Trocando para Antonio (mais estável que Donato)
+    communicate = edge_tts.Communicate(texto, "pt-BR-AntonioNeural")
     await communicate.save(OUTPUT_FILE)
     return OUTPUT_FILE
 
 def falar(texto):
     if not voz_ativa: return
-    # Limpeza para não falar besteira
+    
+    # Limpeza básica
     clean_text = re.sub(r'\[.*?\]', '', texto).replace('*', '').replace('VOCÊ DISSE:', '')
-    if not clean_text.strip(): return
+    clean_text = clean_text.strip()
+    
+    if not clean_text: return
 
+    # TENTATIVA 1: MODO NEURAL (Alta Qualidade)
     try:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         arquivo = loop.run_until_complete(gerar_audio_neural(clean_text))
-        st.audio(arquivo, format='audio/mp3', start_time=0)
+        
+        # Lê o arquivo para memória para evitar travamento de arquivo aberto
+        with open(arquivo, "rb") as f:
+            audio_bytes = f.read()
+        st.audio(audio_bytes, format='audio/mp3', start_time=0)
+        
     except Exception as e:
-        st.error(f"Erro Voz: {e}")
+        # TENTATIVA 2: MODO WEB (Fallback se o Neural falhar)
+        # Isso resolve o erro "No audio was received" - ele cai pra cá
+        print(f"Erro Neural: {e} -> Usando Fallback Web")
+        try:
+            texto_safe = urllib.parse.quote(clean_text[:200]) # Limite seguro para web
+            url = f"https://translate.google.com/translate_tts?ie=UTF-8&q={texto_safe}&tl=pt&client=tw-ob"
+            st.audio(url, format='audio/mp3')
+        except:
+            st.error("ERRO CRÍTICO NOS DOIS SISTEMAS DE VOZ.")
 
 def get_system_prompt(modo="normal"):
     base = "Você é o HELIOS. Fale Português."
@@ -98,7 +129,6 @@ def get_system_prompt(modo="normal"):
 def processar_request(prompt_user, imagem=None, audio=None, modo_verbosidade="normal"):
     lista_partes = []
     
-    # Adiciona instrução do sistema
     sys_instruction = get_system_prompt(modo_verbosidade)
     if prompt_user: sys_instruction += f"\n\nUSUÁRIO: {prompt_user}"
     
@@ -121,21 +151,19 @@ def processar_request(prompt_user, imagem=None, audio=None, modo_verbosidade="no
             )
             return response.text
         except Exception as e:
-            st.error(f"Erro: {e}")
+            st.error(f"Erro Cérebro: {e}")
             return None
 
-# --- INTERFACE DE ABAS (O FRONTEND) ---
+# --- FRONTEND (ABAS CORRIGIDAS) ---
 
-# Criação das 3 Abas
-tab_texto, tab_voz, tab_visao = st.tabs(["📝 MODO TEXTO", "🎙️ MODO VOZ", "👁️ MODO VISÃO"])
+# Definição das Abas sem Ícones
+tab1, tab2, tab3 = st.tabs(["MODO TEXTO", "MODO VOZ", "MODO VISAO"])
 
 # === ABA 1: TEXTO ===
-with tab_texto:
+with tab1:
     st.subheader(">> TERMINAL DE TEXTO")
-    
-    # Histórico de Chat Simulado (Só mostra a última interação por enquanto para ser rápido)
     with st.form("chat_form"):
-        texto_input = st.text_input("DIGITE SEU COMANDO:", placeholder="Ex: Crie um código python...")
+        texto_input = st.text_input("DIGITE SEU COMANDO:", placeholder="aguardando entrada...")
         enviar_texto = st.form_submit_button("ENVIAR MENSAGEM")
     
     if enviar_texto and texto_input:
@@ -145,51 +173,39 @@ with tab_texto:
             falar(resp)
 
 # === ABA 2: VOZ ===
-with tab_voz:
+with tab2:
     st.subheader(">> INTERFACE DE VOZ")
-    st.markdown("`[STATUS: AGUARDANDO COMANDO SONORO]`")
     
-    col_v1, col_v2 = st.columns([1, 4])
-    with col_v1:
-        st.markdown("### 🎙️")
-    with col_v2:
-        audio_rec = st.audio_input("TOQUE PARA FALAR")
+    audio_rec = st.audio_input("GRAVAR ÁUDIO")
     
     if audio_rec:
-        # No modo voz, assumimos que você quer uma resposta falada
         resp = processar_request("Responda ao áudio.", audio=audio_rec)
         if resp:
-            st.markdown(f"""<div class="user-box">ÁUDIO PROCESSADO</div>""", unsafe_allow_html=True)
             st.markdown(f"""<div class="helios-box">{resp}</div>""", unsafe_allow_html=True)
             falar(resp)
 
 # === ABA 3: VISÃO ===
-with tab_visao:
-    st.subheader(">> ANÁLISE VISUAL EM TEMPO REAL")
+with tab3:
+    st.subheader(">> ANÁLISE VISUAL")
     
-    # Controles da Visão
     col_conf1, col_conf2 = st.columns(2)
     with col_conf1:
         modo_visao = st.radio("VERBOSIDADE:", ["Curto", "Normal", "Verboso"], horizontal=True)
     with col_conf2:
-        mostrar_preview = st.toggle("MOSTRAR PREVIEW DA CÂMERA", value=True)
+        mostrar_preview = st.toggle("MOSTRAR CÂMERA", value=True)
     
     st.markdown("---")
     
-    # Câmera
-    img_file = st.camera_input("SENSOR ÓPTICO", label_visibility="collapsed" if not mostrar_preview else "visible")
+    # Label visibility collapsed remove o texto "Label" chato
+    img_file = st.camera_input("SENSOR", label_visibility="collapsed" if not mostrar_preview else "visible")
     
-    # Botão de Transmissão (Simulado)
-    # Nota: Streamlit não deixa fazer loop infinito com camera_input sem travar.
-    # O usuário precisa clicar para 'atualizar' a visão por enquanto.
     if img_file:
         botao_analisar = st.button(">> ANALISAR CENA ATUAL", type="primary")
         
         if botao_analisar:
-            # Converte modo para chave interna
             modo_map = {"Curto": "curto", "Normal": "normal", "Verboso": "verboso"}
+            prompt_visao = "Descreva o que você vê."
             
-            prompt_visao = "Descreva o que você vê conforme o nível de detalhe solicitado."
             resp = processar_request(prompt_visao, imagem=img_file, modo_verbosidade=modo_map[modo_visao])
             
             if resp:
