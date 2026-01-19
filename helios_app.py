@@ -48,6 +48,7 @@ st.markdown("""
         text-shadow: 0 0 2px #b8860b;
     }
     
+    /* Esconde menu padrão */
     header {visibility: hidden;}
     </style>
 """, unsafe_allow_html=True)
@@ -57,7 +58,7 @@ col_logo, col_title = st.columns([1, 5])
 with col_logo:
     st.markdown("# 🟡")
 with col_title:
-    st.title("HELIOS // INTERFACE v1.0")
+    st.title("HELIOS // INTERFACE v2.0")
     st.markdown("`[STATUS: AGUARDANDO CREDENCIAIS]`")
 
 st.markdown("---")
@@ -96,18 +97,21 @@ def falar(texto):
 
 def processar(prompt_texto, imagem_arquivo=None):
     """Envia para o Gemini"""
-    conteudo = []
+    lista_partes = []
     
+    # --- CORREÇÃO AQUI: Sintaxe Direta ---
     if prompt_texto:
-        conteudo.append(Part.from_text(prompt_texto))
+        # Em vez de Part.from_text(), usamos direto Part(text=...)
+        lista_partes.append(Part(text=prompt_texto))
     
     if imagem_arquivo:
         img = Image.open(imagem_arquivo)
         buf = io.BytesIO()
         img.save(buf, format="JPEG")
-        conteudo.append(Part.from_bytes(buf.getvalue(), "image/jpeg"))
+        # Sintaxe universal para binários
+        lista_partes.append(Part(inline_data={"mime_type": "image/jpeg", "data": buf.getvalue()}))
 
-    if not conteudo:
+    if not lista_partes:
         return
 
     with st.spinner(">> PROCESSANDO DADOS NEURAIS..."):
@@ -115,40 +119,45 @@ def processar(prompt_texto, imagem_arquivo=None):
             response = client.models.generate_content(
                 model=MODELO,
                 contents=[
-                    Content(role="system", parts=[Part.from_text(SYSTEM_PROMPT)]),
-                    Content(role="user", parts=conteudo)
+                    Content(role="system", parts=[Part(text=SYSTEM_PROMPT)]),
+                    Content(role="user", parts=lista_partes)
                 ]
             )
             
             resposta = response.text
             
+            # Caixa de resposta estilizada
             st.markdown(f"""
-            <div style="border: 1px solid #FFD700; padding: 10px; background-color: #111;">
-            <strong>>> HELIOS RESPOSTA:</strong><br><br>{resposta}
+            <div style="border: 1px solid #FFD700; padding: 15px; background-color: #050505; border-left: 5px solid #FFD700;">
+            <strong style="color: #FFD700;">>> HELIOS RESPOSTA:</strong><br><br>
+            <span style="color: #FFF;">{resposta}</span>
             </div>
             """, unsafe_allow_html=True)
             
-            # Tenta falar (vai ignorar pois está no modo silencioso)
             falar(resposta)
                 
         except Exception as e:
-            st.error(f">> ERRO CRÍTICO: {e}")
+            st.error(f">> ERRO DE PROCESSAMENTO: {e}")
 
 # --- ÁREA PRINCIPAL ---
 col1, col2 = st.columns(2)
 
 with col1:
     st.subheader(">> ENTRADA DE TEXTO")
-    texto = st.text_input("COMANDO:", key="cmd_input")
-    if st.button("ENVIAR DADOS [ENTER]"):
-        processar(texto)
+    # O form evita recarregar a página a cada letra digitada
+    with st.form("form_texto"):
+        texto = st.text_input("COMANDO:")
+        enviou = st.form_submit_button("ENVIAR DADOS [ENTER]")
+        if enviou and texto:
+            processar(texto)
 
 with col2:
     st.subheader(">> ENTRADA VISUAL")
     imagem = st.camera_input("SENSOR ÓPTICO")
     
     if imagem:
-        st.write(">> IMAGEM CAPTURADA NO BUFFER")
+        st.write(">> IMAGEM NO BUFFER")
+        # Botão fora do form da câmera para processar apenas quando quiser
         if st.button("ANALISAR VISUAL"):
             prompt_visual = texto if texto else "Descreva o que os sensores visuais captaram."
             processar(prompt_visual, imagem)
