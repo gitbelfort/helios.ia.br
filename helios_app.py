@@ -5,7 +5,7 @@ from google.genai.types import Content, Part
 from PIL import Image
 import io
 import urllib.parse
-import re # Biblioteca para limpar o texto (Regex)
+import re
 
 # --- CONFIGURAÇÃO VISUAL TRON ---
 st.set_page_config(page_title="HELIOS | SYSTEM", page_icon="🟡", layout="wide")
@@ -49,16 +49,16 @@ st.markdown("""
 # --- CABEÇALHO ---
 col1, col2 = st.columns([1, 10])
 with col1: st.title("🟡")
-with col2: st.title("HELIOS // SYSTEM v3.3")
+with col2: st.title("HELIOS // SYSTEM v3.4")
 
-st.markdown("`[STATUS: MÓDULO DE TRANSCRIÇÃO ATIVO]`")
+st.markdown("`[STATUS: AUDIO LONG-RANGE ATIVO]`")
 st.markdown("---")
 
 # --- BARRA LATERAL ---
 with st.sidebar:
     st.header(">> CONFIGURAÇÃO")
     api_key = st.text_input("CHAVE DE ACESSO (API KEY)", type="password")
-    voz_ativa = st.toggle("RESPOSTA DE VOZ (HELIOS)", value=True)
+    voz_ativa = st.toggle("RESPOSTA DE VOZ", value=True)
     st.info("DOMÍNIO: HELIOS.IA.BR")
 
 # --- LÓGICA ---
@@ -69,58 +69,58 @@ if not api_key:
 client = genai.Client(api_key=api_key, http_options={"api_version": "v1alpha"})
 MODELO = "gemini-2.0-flash-exp"
 
-# Prompt Ajustado para Transcrição
+# Prompt Ajustado
 SYSTEM_INSTRUCTION = """
 INSTRUÇÃO DE SISTEMA: Você é o HELIOS.
-IMPORTANTE: Sua resposta deve ter DUAS partes separadas.
-1. Primeiro, escreva exatamente o que você ouviu ou entendeu do usuário, começando com "VOCÊ DISSE:".
-2. Pule uma linha e dê sua resposta técnica como HELIOS (Use [STATUS], >>).
-Exemplo:
-VOCÊ DISSE: Qual a temperatura?
-[STATUS: OK] >> A temperatura atual é...
+IMPORTANTE: Sua resposta deve ter DUAS partes.
+1. Comece com "VOCÊ DISSE: [O que você entendeu]".
+2. Pule uma linha e dê sua resposta técnica (Use [STATUS], >>).
 """
 
-def limpar_texto_para_audio(texto_bruto):
-    """Remove caracteres especiais que travam o Google TTS"""
-    # Remove tudo entre colchetes [STATUS]
-    limpo = re.sub(r'\[.*?\]', '', texto_bruto)
-    # Remove símbolos >>, *, #
-    limpo = limpo.replace('>>', '').replace('*', '').replace('#', '').replace('VOCÊ DISSE:', '')
-    return limpo.strip()
+def limpar_texto(texto):
+    """Remove formatação para leitura de voz"""
+    texto = re.sub(r'\[.*?\]', '', texto) # Remove [STATUS]
+    texto = texto.replace('*', '').replace('#', '').replace('VOCÊ DISSE:', '')
+    return texto.strip()
 
 def falar_resposta(texto):
-    """Gera áudio usando API Web com texto limpo"""
-    if voz_ativa:
-        try:
-            # Limpa o texto antes de enviar para o áudio
-            texto_fala = limpar_texto_para_audio(texto)
-            
-            # Se ficou vazio (só tinha símbolos), não fala nada
-            if len(texto_fala) < 2: return
+    """Sistema Híbrido de Voz: gTTS (Principal) -> Web (Fallback)"""
+    if not voz_ativa: return
+    
+    texto_limpo = limpar_texto(texto)
+    if not texto_limpo: return
 
-            texto_safe = urllib.parse.quote(texto_fala)
-            url_audio = f"https://translate.google.com/translate_tts?ie=UTF-8&q={texto_safe}&tl=pt&client=tw-ob"
-            
-            st.markdown(f"""
-                <audio autoplay="true" style="display:none;">
-                <source src="{url_audio}" type="audio/mp3">
-                </audio>
-            """, unsafe_allow_html=True)
-            
-            # Player visível para replay
-            st.audio(url_audio, format='audio/mp3')
-            
-        except Exception as e:
-            st.warning(f"[FALHA NO AUDIO]: {e}")
+    # TENTATIVA 1: gTTS (Melhor qualidade, sem limite de tamanho)
+    try:
+        from gTTS import gTTS
+        tts = gTTS(text=texto_limpo, lang='pt', slow=False)
+        audio_bytes = io.BytesIO()
+        tts.write_to_fp(audio_bytes)
+        st.audio(audio_bytes, format='audio/mp3', start_time=0)
+        return # Se deu certo, para aqui.
+        
+    except Exception as e:
+        print(f"Erro gTTS: {e}")
+        # Se falhar, vai para a Tentativa 2
+        pass
+
+    # TENTATIVA 2: Web Hack (Fallback para não ficar mudo)
+    try:
+        # Corta em 200 caracteres para não travar o link do Google
+        resumo = texto_limpo[:200] + "..."
+        texto_safe = urllib.parse.quote(resumo)
+        url_audio = f"https://translate.google.com/translate_tts?ie=UTF-8&q={texto_safe}&tl=pt&client=tw-ob"
+        
+        st.warning("⚠️ [MODO DE VOZ WEB: LEITURA RESUMIDA]")
+        st.audio(url_audio, format='audio/mp3')
+    except:
+        st.error(">> FALHA TOTAL NO SISTEMA DE ÁUDIO")
 
 def processar(texto_usuario=None, imagem_usuario=None, audio_usuario=None):
     lista_partes = []
     
     prompt_base = SYSTEM_INSTRUCTION
-    
-    if texto_usuario:
-        prompt_base += f"\n\nUSUÁRIO (TEXTO): {texto_usuario}"
-    
+    if texto_usuario: prompt_base += f"\n\nUSUÁRIO (TEXTO): {texto_usuario}"
     lista_partes.append(Part(text=prompt_base))
     
     if imagem_usuario:
@@ -130,11 +130,9 @@ def processar(texto_usuario=None, imagem_usuario=None, audio_usuario=None):
         lista_partes.append(Part(inline_data={"mime_type": "image/jpeg", "data": buf.getvalue()}))
         
     if audio_usuario:
-        audio_bytes = audio_usuario.getvalue()
-        lista_partes.append(Part(inline_data={"mime_type": "audio/wav", "data": audio_bytes}))
+        lista_partes.append(Part(inline_data={"mime_type": "audio/wav", "data": audio_usuario.getvalue()}))
 
-    if not texto_usuario and not imagem_usuario and not audio_usuario:
-        return
+    if not texto_usuario and not imagem_usuario and not audio_usuario: return
 
     with st.spinner(">> PROCESSANDO DADOS NEURAIS..."):
         try:
@@ -143,31 +141,28 @@ def processar(texto_usuario=None, imagem_usuario=None, audio_usuario=None):
                 contents=[Content(role="user", parts=lista_partes)]
             )
             
-            resposta_completa = response.text
+            resposta_full = response.text
             
-            # Tenta separar o que é transcrição do que é resposta do Helios
-            partes = resposta_completa.split("VOCÊ DISSE:")
-            
-            if len(partes) > 1:
-                # Se o modelo obedeceu, separamos visualmente
-                resto = partes[1].split("\n", 1) # Pega a primeira linha como transcrição
-                transcricao_usuario = resto[0].strip()
+            # Separa Transcrição da Resposta
+            if "VOCÊ DISSE:" in resposta_full:
+                partes = resposta_full.split("VOCÊ DISSE:")
+                resto = partes[1].split("\n", 1)
+                transcricao = resto[0].strip()
                 resposta_helios = resto[1].strip() if len(resto) > 1 else ""
             else:
-                # Fallback se ele não separar
-                transcricao_usuario = "Entrada de Áudio/Imagem Processada"
-                resposta_helios = resposta_completa
+                transcricao = "Entrada Processada"
+                resposta_helios = resposta_full
 
-            # 1. Exibe a Transcrição do Usuário
-            if transcricao_usuario:
+            # 1. Mostra Transcrição
+            if transcricao:
                 st.markdown(f"""
                 <div class="user-box">
-                <small style="color: #FFD700;">🎤 TRANSCRIÇÃO (VOCÊ):</small><br>
-                <span style="color: #FFF;">"{transcricao_usuario}"</span>
+                <small style="color: #FFD700;">🎤 VOCÊ DISSE:</small><br>
+                <span style="color: #FFF;">"{transcricao}"</span>
                 </div>
                 """, unsafe_allow_html=True)
 
-            # 2. Exibe a Resposta do Helios
+            # 2. Mostra Resposta
             st.markdown(f"""
             <div class="helios-box">
             <strong style="color: #FFD700;">>> HELIOS RESPOSTA:</strong><br><br>
@@ -175,33 +170,28 @@ def processar(texto_usuario=None, imagem_usuario=None, audio_usuario=None):
             </div>
             """, unsafe_allow_html=True)
             
-            # 3. Gera o Áudio (apenas da resposta do Helios, limpa)
+            # 3. Fala
             falar_resposta(resposta_helios)
                 
         except Exception as e:
-            st.error(f">> ERRO DE COMUNICAÇÃO: {e}")
+            st.error(f">> ERRO: {e}")
 
-# --- INTERFACE PRINCIPAL ---
-
+# --- INTERFACE ---
 col_text, col_cam = st.columns(2)
 
 with col_text:
     st.subheader(">> COMANDO DE VOZ / TEXTO")
+    audio_rec = st.audio_input("GRAVAR")
+    if audio_rec: processar(audio_usuario=audio_rec)
     
-    audio_rec = st.audio_input("GRAVAR COMANDO DE VOZ")
-    if audio_rec:
-        processar(audio_usuario=audio_rec)
-        
     st.markdown("--- OU ---")
     
     with st.form("form_txt"):
-        txt = st.text_input("DIGITAR COMANDO:")
-        if st.form_submit_button("ENVIAR TEXTO"):
-            processar(texto_usuario=txt)
+        txt = st.text_input("DIGITAR:")
+        if st.form_submit_button("ENVIAR"): processar(texto_usuario=txt)
 
 with col_cam:
     st.subheader(">> SENSOR VISUAL")
-    cam = st.camera_input("ATIVAR CÂMERA")
-    if cam:
-        if st.button("ANALISAR IMAGEM"):
-            processar(imagem_usuario=cam, texto_usuario="Descreva o que vê.")
+    cam = st.camera_input("ATIVAR")
+    if cam and st.button("ANALISAR IMAGEM"):
+        processar(imagem_usuario=cam, texto_usuario="Descreva esta imagem.")
