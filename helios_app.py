@@ -9,7 +9,7 @@ import io
 import re
 import urllib.parse
 
-# --- CONFIGURAÇÃO VISUAL TRON (CSS V3) ---
+# --- CONFIGURAÇÃO VISUAL TRON (CSS V4 - CLEAN) ---
 st.set_page_config(page_title="HELIOS | SYSTEM", page_icon="🟡", layout="wide")
 
 st.markdown("""
@@ -18,19 +18,25 @@ st.markdown("""
     
     .stApp { background-color: #000000; color: #FFD700; font-family: 'Share Tech Mono', monospace; }
     
-    /* --- CSS DAS ABAS (ESTILO BORDA) --- */
+    /* --- REMOVENDO O CABEÇALHO PADRÃO (Tira o keyboard_double_arrow...) --- */
+    header[data-testid="stHeader"] {
+        display: none;
+    }
+    .stDeployButton {
+        display: none;
+    }
     
+    /* --- CSS DAS ABAS --- */
     .stTabs [data-baseweb="tab-list"] {
         gap: 10px;
         background-color: transparent;
         padding-bottom: 10px;
     }
     
-    /* Aba INATIVA: Discreta */
     .stTabs [data-baseweb="tab"] {
         height: 45px;
         background-color: #050505;
-        color: #666; /* Cinza para inativo */
+        color: #666;
         border: 1px solid #333;
         border-radius: 4px;
         text-transform: uppercase;
@@ -38,14 +44,13 @@ st.markdown("""
         font-size: 16px;
     }
     
-    /* Aba ATIVA: Apenas Borda Amarela e Brilho */
     .stTabs [data-baseweb="tab"][aria-selected="true"] {
         background-color: #000000 !important;
         color: #FFD700 !important;
-        border: 2px solid #FFD700 !important; /* Borda grossa amarela */
+        border: 2px solid #FFD700 !important;
         border-radius: 4px;
         font-weight: bold;
-        box-shadow: 0 0 8px rgba(255, 215, 0, 0.4); /* Leve brilho neon */
+        box-shadow: 0 0 8px rgba(255, 215, 0, 0.4);
     }
     
     /* Inputs, Botões e Caixas */
@@ -54,7 +59,6 @@ st.markdown("""
     .stButton > button:hover { background-color: #FFD700; color: #000000; box-shadow: 0 0 15px #FFD700; }
     
     h1, h2, h3, p, label, span, div { color: #FFD700 !important; font-family: 'Share Tech Mono', monospace !important; }
-    header {visibility: hidden;}
     
     .user-box { border: 1px dashed #FFD700; padding: 10px; margin-bottom: 10px; opacity: 0.8; font-size: 0.9em;}
     .helios-box { border: 1px solid #FFD700; padding: 20px; background-color: #050505; border-left: 5px solid #FFD700; margin-top: 10px; font-size: 1.1em;}
@@ -70,17 +74,24 @@ def limpar_terminal():
 
 # --- SIDEBAR ---
 with st.sidebar:
-    st.title("🟡 HELIOS v5.3")
+    st.title("🟡 HELIOS v5.4")
     api_key = st.text_input("CHAVE DE ACESSO (API KEY)", type="password")
     
     st.markdown("---")
-    st.header(">> CONTROLE")
-    voz_ativa = st.toggle("SINTETIZADOR DE VOZ", value=True)
+    st.header(">> ÁUDIO")
+    # Explicação: Este botão liga/desliga o som geral
+    voz_ativa = st.toggle("ATIVAR FALAS (VOZ)", value=True)
     
+    # Seletor de Voz para testar qual soa menos robótica
+    tipo_voz = st.radio("MODELO DE VOZ:", ["Masculina (Antonio)", "Feminina (Francisca)"])
+    
+    # Mapeamento para o código da Microsoft
+    voz_code = "pt-BR-AntonioNeural" if "Masculina" in tipo_voz else "pt-BR-FranciscaNeural"
+    
+    st.markdown("---")
     if st.button("♻️ LIMPAR TERMINAL"):
         limpar_terminal()
         
-    st.markdown("---")
     st.info("DOMÍNIO: HELIOS.IA.BR")
 
 if not api_key:
@@ -91,9 +102,9 @@ client = genai.Client(api_key=api_key, http_options={"api_version": "v1alpha"})
 MODELO = "gemini-2.0-flash-exp"
 
 # --- LÓGICA DE VOZ ---
-async def gerar_audio_neural(texto):
+async def gerar_audio_neural(texto, voz_selecionada):
     OUTPUT_FILE = "helios_neural.mp3"
-    communicate = edge_tts.Communicate(texto, "pt-BR-AntonioNeural")
+    communicate = edge_tts.Communicate(texto, voz_selecionada)
     await communicate.save(OUTPUT_FILE)
     return OUTPUT_FILE
 
@@ -103,14 +114,18 @@ def falar(texto):
     if not clean_text: return
 
     try:
+        # Tenta a voz Neural (Boa qualidade)
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        arquivo = loop.run_until_complete(gerar_audio_neural(clean_text))
+        arquivo = loop.run_until_complete(gerar_audio_neural(clean_text, voz_code))
         with open(arquivo, "rb") as f:
             audio_bytes = f.read()
         st.audio(audio_bytes, format='audio/mp3', start_time=0)
     except Exception as e:
-        # Fallback Web
+        # Fallback Web (Voz Robótica de Segurança)
+        # Se cair aqui, avisa o usuário
+        print(f"Erro Neural: {e}")
+        st.toast("⚠️ Falha na Neural. Usando voz de backup.", icon="⚠️")
         try:
             texto_safe = urllib.parse.quote(clean_text[:200])
             url = f"https://translate.google.com/translate_tts?ie=UTF-8&q={texto_safe}&tl=pt&client=tw-ob"
@@ -149,7 +164,7 @@ def processar_request(prompt_user, imagem=None, audio=None, modo_verbosidade="no
             st.error(f"Erro Cérebro: {e}")
             return None
 
-# --- FRONTEND (ABAS) ---
+# --- FRONTEND ---
 id_sessao = st.session_state.reset_counter
 
 tab1, tab2, tab3 = st.tabs(["MODO TEXTO", "MODO VOZ", "MODO VISAO"])
@@ -186,19 +201,16 @@ with tab3:
     with col1:
         modo = st.radio("VERBOSIDADE:", ["Curto", "Normal", "Verboso"], horizontal=True, key=f"radio_{id_sessao}")
     with col2:
-        # Agora sim: Se desligar, a câmera some
         preview = st.toggle("ATIVAR SENSOR VISUAL", value=True, key=f"toggle_{id_sessao}")
         
     st.markdown("---")
     
     if preview:
         img_file = st.camera_input("SENSOR", label_visibility="collapsed", key=f"cam_{id_sessao}")
-        
         if img_file:
             if st.button(">> ANALISAR CENA", key=f"btn_analisar_{id_sessao}", type="primary"):
                 modo_map = {"Curto": "curto", "Normal": "normal", "Verboso": "verboso"}
                 resp = processar_request("Descreva o que vê.", imagem=img_file, modo_verbosidade=modo_map[modo])
-                
                 if resp:
                     st.markdown(f"""<div class="helios-box">[{modo.upper()}] >> {resp}</div>""", unsafe_allow_html=True)
                     falar(resp)
