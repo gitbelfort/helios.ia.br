@@ -2,7 +2,7 @@ import streamlit as st
 import os
 from google import genai
 from google.genai.types import Content, Part
-from gTTS import gTTS
+#from gTTS import gTTS
 from PIL import Image
 import io
 
@@ -94,15 +94,18 @@ Não use emojis. Use [STATUS], >>, //.
 Se receber imagem, descreva analiticamente.
 """
 
-def falar(texto):
+#def falar(texto):
     """Gera áudio MP3 para o navegador"""
-    try:
-        tts = gTTS(text=texto, lang='pt', slow=False)
-        audio_bytes = io.BytesIO()
-        tts.write_to_fp(audio_bytes)
-        st.audio(audio_bytes, format='audio/mp3', start_time=0)
-    except:
-        st.error("ERRO NO MÓDULO DE VOZ")
+#    try:
+#        tts = gTTS(text=texto, lang='pt', slow=False)
+#        audio_bytes = io.BytesIO()
+#        tts.write_to_fp(audio_bytes)
+#        st.audio(audio_bytes, format='audio/mp3', start_time=0)
+#    except:
+#        st.error("ERRO NO MÓDULO DE VOZ")
+
+def falar(texto):
+    pass # Modo silencioso temporário
 
 def processar(prompt_texto, imagem_arquivo=None):
     """Envia para o Gemini"""
@@ -167,4 +170,5 @@ with col2:
         st.write(">> IMAGEM CAPTURADA NO BUFFER")
         if st.button("ANALISAR VISUAL"):
             prompt_visual = texto if texto else "Descreva o que os sensores visuais captaram."
+
             processar(prompt_visual, imagem)
