@@ -2,105 +2,170 @@ import streamlit as st
 import os
 from google import genai
 from google.genai.types import Content, Part
+from gTTS import gTTS
 from PIL import Image
 import io
 
-# --- CONFIGURAÇÃO DA PÁGINA ---
+# --- CONFIGURAÇÃO VISUAL TRON ---
 st.set_page_config(page_title="HELIOS | SYSTEM", page_icon="🟡", layout="wide")
 
-# CSS TRON / TERMINAL
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
     
     .stApp { background-color: #000000; color: #FFD700; font-family: 'Share Tech Mono', monospace; }
-    .stTextInput > div > div > input { background-color: #0a0a0a; color: #FFD700; border: 1px solid #FFD700; font-family: 'Share Tech Mono', monospace; }
-    .stButton > button { background-color: #000000; color: #FFD700; border: 2px solid #FFD700; border-radius: 0px; text-transform: uppercase; transition: 0.3s; }
-    .stButton > button:hover { background-color: #FFD700; color: #000000; box-shadow: 0 0 15px #FFD700; }
+    
+    /* Estilo dos Inputs */
+    .stTextInput > div > div > input { 
+        background-color: #0a0a0a; color: #FFD700; border: 1px solid #FFD700; 
+        font-family: 'Share Tech Mono', monospace; 
+    }
+    
+    /* Botões */
+    .stButton > button { 
+        background-color: #000000; color: #FFD700; border: 2px solid #FFD700; 
+        border-radius: 0px; text-transform: uppercase; transition: 0.3s; width: 100%;
+    }
+    .stButton > button:hover { 
+        background-color: #FFD700; color: #000000; box-shadow: 0 0 15px #FFD700; 
+    }
+    
+    /* Texto Geral */
     h1, h2, h3, p, label, span, div { color: #FFD700 !important; font-family: 'Share Tech Mono', monospace !important; }
+    
+    /* Esconde menu padrão */
     header {visibility: hidden;}
+    
+    /* Ajuste da caixa de resposta */
+    .helios-box {
+        border: 1px solid #FFD700; 
+        padding: 20px; 
+        background-color: #050505; 
+        border-left: 5px solid #FFD700;
+        margin-top: 20px;
+    }
     </style>
 """, unsafe_allow_html=True)
 
 # --- CABEÇALHO ---
-col_logo, col_title = st.columns([1, 5])
-with col_logo: st.markdown("# 🟡")
-with col_title:
-    st.title("HELIOS // INTERFACE v2.1")
-    st.markdown("`[STATUS: AGUARDANDO COMANDO]`")
+col1, col2 = st.columns([1, 10])
+with col1: st.title("🟡")
+with col2: st.title("HELIOS // SYSTEM v3.0")
+
+st.markdown("`[STATUS: SISTEMAS DE ÁUDIO E VÍDEO ONLINE]`")
 st.markdown("---")
 
 # --- BARRA LATERAL ---
 with st.sidebar:
     st.header(">> CONFIGURAÇÃO")
     api_key = st.text_input("CHAVE DE ACESSO (API KEY)", type="password")
+    voz_ativa = st.toggle("RESPOSTA DE VOZ (HELIOS)", value=True)
     st.info("DOMÍNIO: HELIOS.IA.BR")
 
 # --- LÓGICA ---
 if not api_key:
-    st.warning(">> INSIRA A CHAVE NA BARRA LATERAL.")
+    st.warning(">> ALERTA: INSIRA A CHAVE DE ACESSO PARA INICIAR.")
     st.stop()
 
 client = genai.Client(api_key=api_key, http_options={"api_version": "v1alpha"})
 MODELO = "gemini-2.0-flash-exp"
 
-# Prompt embutido (Cavalo de Tróia)
+# Prompt "Cavalo de Tróia" (Instrução embutida)
 SYSTEM_INSTRUCTION = """
-INSTRUÇÃO MESTRA: Você é o HELIOS, IA com interface TRON.
+INSTRUÇÃO DE SISTEMA: Você é o HELIOS.
 Fale Português do Brasil. Seja técnico, conciso e útil.
 Use [STATUS], >>. Não use emojis.
-Se receber imagem, descreva analiticamente.
 """
 
-def processar(prompt_texto, imagem_arquivo=None):
+def falar_resposta(texto):
+    """Gera o áudio da resposta"""
+    if voz_ativa:
+        try:
+            tts = gTTS(text=texto, lang='pt', slow=False)
+            audio_bytes = io.BytesIO()
+            tts.write_to_fp(audio_bytes)
+            st.audio(audio_bytes, format='audio/mp3', start_time=0)
+        except:
+            st.warning("[ERRO NO SINTETIZADOR DE VOZ]")
+
+def processar(texto_usuario=None, imagem_usuario=None, audio_usuario=None):
     lista_partes = []
     
-    # 1. Injeta a personalidade HELIOS como se fosse texto do usuário
-    # Isso evita o erro "System role not supported"
-    texto_final = SYSTEM_INSTRUCTION + "\n\n" + "USUÁRIO DIZ: " + (prompt_texto if prompt_texto else "Analise a entrada visual.")
+    # 1. Instrução do Sistema
+    prompt_base = SYSTEM_INSTRUCTION
     
-    lista_partes.append(Part(text=texto_final))
+    # 2. Adiciona Texto se houver
+    if texto_usuario:
+        prompt_base += f"\n\nUSUÁRIO (TEXTO): {texto_usuario}"
     
-    if imagem_arquivo:
-        img = Image.open(imagem_arquivo)
+    lista_partes.append(Part(text=prompt_base))
+    
+    # 3. Adiciona Imagem se houver
+    if imagem_usuario:
+        img = Image.open(imagem_usuario)
         buf = io.BytesIO()
         img.save(buf, format="JPEG")
         lista_partes.append(Part(inline_data={"mime_type": "image/jpeg", "data": buf.getvalue()}))
+        
+    # 4. Adiciona Áudio (Voz do usuário) se houver
+    if audio_usuario:
+        # Lê os bytes do áudio gravado e manda pro Gemini ouvir
+        audio_bytes = audio_usuario.getvalue()
+        lista_partes.append(Part(inline_data={"mime_type": "audio/wav", "data": audio_bytes}))
 
-    with st.spinner(">> PROCESSANDO DADOS..."):
+    # Se não tiver nada, para
+    if not texto_usuario and not imagem_usuario and not audio_usuario:
+        return
+
+    with st.spinner(">> PROCESSANDO DADOS NEURAIS..."):
         try:
-            # Enviamos tudo como "user", o Gemini é esperto e entende a instrução.
             response = client.models.generate_content(
                 model=MODELO,
-                contents=[
-                    Content(role="user", parts=lista_partes)
-                ]
+                contents=[Content(role="user", parts=lista_partes)]
             )
             
-            resposta = response.text
+            resposta_final = response.text
             
+            # Exibe resposta visual (HTML corrigido)
             st.markdown(f"""
-            <div style="border: 1px solid #FFD700; padding: 15px; background-color: #050505; border-left: 5px solid #FFD700;">
+            <div class="helios-box">
             <strong style="color: #FFD700;">>> HELIOS RESPOSTA:</strong><br><br>
-            <span style="color: #FFF;">{resposta}</span>
+            <span style="color: #FFF;">{resposta_final}</span>
             </div>
             """, unsafe_allow_html=True)
             
+            # Toca o áudio da resposta
+            falar_resposta(resposta_final)
+                
         except Exception as e:
-            st.error(f">> ERRO: {e}")
+            st.error(f">> ERRO DE COMUNICAÇÃO: {e}")
 
-# --- INTERFACE ---
-col1, col2 = st.columns(2)
+# --- INTERFACE PRINCIPAL ---
 
-with col1:
-    st.subheader(">> ENTRADA DE TEXTO")
-    with st.form("texto_form"):
-        txt = st.text_input("COMANDO:")
-        if st.form_submit_button("ENVIAR"):
-            processar(txt)
+col_text, col_cam = st.columns(2)
 
-with col2:
-    st.subheader(">> ENTRADA VISUAL")
-    cam = st.camera_input("SENSOR ÓPTICO")
-    if cam and st.button("ANALISAR VISUAL"):
-        processar(txt if txt else "", cam)
+with col_text:
+    st.subheader(">> COMANDO DE VOZ / TEXTO")
+    
+    # 1. Microfone (Novo!)
+    audio_rec = st.audio_input("GRAVAR COMANDO DE VOZ")
+    if audio_rec:
+        st.write(">> ÁUDIO CAPTURADO")
+        # Processa automaticamente ao terminar de gravar
+        processar(audio_usuario=audio_rec)
+        
+    st.markdown("--- OU ---")
+    
+    # 2. Texto
+    with st.form("form_txt"):
+        txt = st.text_input("DIGITAR COMANDO:")
+        if st.form_submit_button("ENVIAR TEXTO"):
+            processar(texto_usuario=txt)
+
+with col_cam:
+    st.subheader(">> SENSOR VISUAL")
+    # 3. Câmera
+    cam = st.camera_input("ATIVAR CÂMERA")
+    if cam:
+        if st.button("ANALISAR IMAGEM"):
+            processar(imagem_usuario=cam, texto_usuario="Descreva o que vê.")
