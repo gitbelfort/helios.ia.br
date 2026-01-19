@@ -1,4 +1,4 @@
 streamlit
 google-genai
-gTTS==2.5.4
+gTTS
 Pillow
