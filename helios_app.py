@@ -9,7 +9,7 @@ import io
 import re
 import urllib.parse
 
-# --- CONFIGURAÇÃO VISUAL TRON (CSS V2) ---
+# --- CONFIGURAÇÃO VISUAL TRON (CSS V3) ---
 st.set_page_config(page_title="HELIOS | SYSTEM", page_icon="🟡", layout="wide")
 
 st.markdown("""
@@ -18,34 +18,34 @@ st.markdown("""
     
     .stApp { background-color: #000000; color: #FFD700; font-family: 'Share Tech Mono', monospace; }
     
-    /* --- CSS DAS ABAS (CORREÇÃO DE CONTRASTE) --- */
+    /* --- CSS DAS ABAS (ESTILO BORDA) --- */
     
-    /* Container das abas */
     .stTabs [data-baseweb="tab-list"] {
         gap: 10px;
         background-color: transparent;
         padding-bottom: 10px;
     }
     
-    /* Aba INATIVA (Fundo Preto, Texto Amarelo) */
+    /* Aba INATIVA: Discreta */
     .stTabs [data-baseweb="tab"] {
-        height: 50px;
-        background-color: #000000;
-        color: #FFD700;
-        border: 1px solid #FFD700;
-        border-radius: 0px;
+        height: 45px;
+        background-color: #050505;
+        color: #666; /* Cinza para inativo */
+        border: 1px solid #333;
+        border-radius: 4px;
         text-transform: uppercase;
         font-family: 'Share Tech Mono', monospace;
         font-size: 16px;
-        font-weight: normal;
     }
     
-    /* Aba ATIVA (Fundo Amarelo, Texto Preto) - Forçando com !important */
+    /* Aba ATIVA: Apenas Borda Amarela e Brilho */
     .stTabs [data-baseweb="tab"][aria-selected="true"] {
-        background-color: #FFD700 !important;
-        color: #000000 !important;
-        font-weight: 900 !important;
-        border: 1px solid #FFD700;
+        background-color: #000000 !important;
+        color: #FFD700 !important;
+        border: 2px solid #FFD700 !important; /* Borda grossa amarela */
+        border-radius: 4px;
+        font-weight: bold;
+        box-shadow: 0 0 8px rgba(255, 215, 0, 0.4); /* Leve brilho neon */
     }
     
     /* Inputs, Botões e Caixas */
@@ -61,25 +61,22 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- SISTEMA DE RESET (SESSION STATE) ---
+# --- SISTEMA DE RESET ---
 if 'reset_counter' not in st.session_state:
     st.session_state.reset_counter = 0
 
 def limpar_terminal():
     st.session_state.reset_counter += 1
-    # st.rerun() não é necessário aqui pois o botão já recarrega, 
-    # mas o contador muda as keys dos widgets, limpando-os.
 
 # --- SIDEBAR ---
 with st.sidebar:
-    st.title("🟡 HELIOS v5.2")
+    st.title("🟡 HELIOS v5.3")
     api_key = st.text_input("CHAVE DE ACESSO (API KEY)", type="password")
     
     st.markdown("---")
     st.header(">> CONTROLE")
     voz_ativa = st.toggle("SINTETIZADOR DE VOZ", value=True)
     
-    # Botão de Limpeza com Estilo de Perigo (Borda Vermelha simulada pelo Streamlit se possível, ou padrão)
     if st.button("♻️ LIMPAR TERMINAL"):
         limpar_terminal()
         
@@ -113,7 +110,7 @@ def falar(texto):
             audio_bytes = f.read()
         st.audio(audio_bytes, format='audio/mp3', start_time=0)
     except Exception as e:
-        print(f"Erro Neural: {e} -> Fallback Web")
+        # Fallback Web
         try:
             texto_safe = urllib.parse.quote(clean_text[:200])
             url = f"https://translate.google.com/translate_tts?ie=UTF-8&q={texto_safe}&tl=pt&client=tw-ob"
@@ -124,7 +121,6 @@ def falar(texto):
 def processar_request(prompt_user, imagem=None, audio=None, modo_verbosidade="normal"):
     lista_partes = []
     
-    # Prompt do Sistema
     base_prompt = "Você é o HELIOS. Responda em Português."
     if modo_verbosidade == "curto": base_prompt += " Seja breve. Uma frase."
     elif modo_verbosidade == "verboso": base_prompt += " Seja detalhista e completo."
@@ -154,8 +150,6 @@ def processar_request(prompt_user, imagem=None, audio=None, modo_verbosidade="no
             return None
 
 # --- FRONTEND (ABAS) ---
-# Usamos o reset_counter na KEY dos widgets. 
-# Se o contador mudar, o Streamlit acha que são widgets novos e "reseta" eles.
 id_sessao = st.session_state.reset_counter
 
 tab1, tab2, tab3 = st.tabs(["MODO TEXTO", "MODO VOZ", "MODO VISAO"])
@@ -176,7 +170,6 @@ with tab1:
 # === ABA 2: VOZ ===
 with tab2:
     st.subheader(">> INTERFACE DE VOZ")
-    # O key dinâmico garante que o áudio suma quando limpar
     audio_rec = st.audio_input("GRAVAR ÁUDIO", key=f"audio_{id_sessao}")
     
     if audio_rec:
@@ -193,18 +186,21 @@ with tab3:
     with col1:
         modo = st.radio("VERBOSIDADE:", ["Curto", "Normal", "Verboso"], horizontal=True, key=f"radio_{id_sessao}")
     with col2:
-        # Toggle para esconder a câmera se quiser
-        preview = st.toggle("PREVIEW", value=True, key=f"toggle_{id_sessao}")
+        # Agora sim: Se desligar, a câmera some
+        preview = st.toggle("ATIVAR SENSOR VISUAL", value=True, key=f"toggle_{id_sessao}")
         
     st.markdown("---")
     
-    img_file = st.camera_input("SENSOR", label_visibility="collapsed" if not preview else "visible", key=f"cam_{id_sessao}")
-    
-    if img_file:
-        if st.button(">> ANALISAR CENA", key=f"btn_analisar_{id_sessao}", type="primary"):
-            modo_map = {"Curto": "curto", "Normal": "normal", "Verboso": "verboso"}
-            resp = processar_request("Descreva o que vê.", imagem=img_file, modo_verbosidade=modo_map[modo])
-            
-            if resp:
-                st.markdown(f"""<div class="helios-box">[{modo.upper()}] >> {resp}</div>""", unsafe_allow_html=True)
-                falar(resp)
+    if preview:
+        img_file = st.camera_input("SENSOR", label_visibility="collapsed", key=f"cam_{id_sessao}")
+        
+        if img_file:
+            if st.button(">> ANALISAR CENA", key=f"btn_analisar_{id_sessao}", type="primary"):
+                modo_map = {"Curto": "curto", "Normal": "normal", "Verboso": "verboso"}
+                resp = processar_request("Descreva o que vê.", imagem=img_file, modo_verbosidade=modo_map[modo])
+                
+                if resp:
+                    st.markdown(f"""<div class="helios-box">[{modo.upper()}] >> {resp}</div>""", unsafe_allow_html=True)
+                    falar(resp)
+    else:
+        st.info(">> SENSOR VISUAL EM STANDBY (OFFLINE)")
