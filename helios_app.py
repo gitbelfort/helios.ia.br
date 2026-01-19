@@ -1,20 +1,10 @@
 import streamlit as st
 import os
-import sys
-import subprocess
-
-# --- HACK DE AUTO-REPARO (Força instalação do gTTS) ---
-try:
-    from gTTS import gTTS
-except ImportError:
-    # Se der erro de "Não encontrado", o Helios instala sozinho agora
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "gTTS"])
-    from gTTS import gTTS
-
 from google import genai
 from google.genai.types import Content, Part
 from PIL import Image
 import io
+import urllib.parse # Biblioteca nativa (não precisa instalar)
 
 # --- CONFIGURAÇÃO VISUAL TRON ---
 st.set_page_config(page_title="HELIOS | SYSTEM", page_icon="🟡", layout="wide")
@@ -58,9 +48,9 @@ st.markdown("""
 # --- CABEÇALHO ---
 col1, col2 = st.columns([1, 10])
 with col1: st.title("🟡")
-with col2: st.title("HELIOS // SYSTEM v3.1")
+with col2: st.title("HELIOS // SYSTEM v3.2")
 
-st.markdown("`[STATUS: PROTOCOLO DE AUTO-REPARO ATIVO]`")
+st.markdown("`[STATUS: SISTEMA DE ÁUDIO WEB ATIVO]`")
 st.markdown("---")
 
 # --- BARRA LATERAL ---
@@ -85,13 +75,23 @@ Use [STATUS], >>. Não use emojis.
 """
 
 def falar_resposta(texto):
-    """Gera áudio da resposta"""
+    """Gera áudio usando API Web (Sem bibliotecas instaladas)"""
     if voz_ativa:
         try:
-            tts = gTTS(text=texto, lang='pt', slow=False)
-            audio_bytes = io.BytesIO()
-            tts.write_to_fp(audio_bytes)
-            st.audio(audio_bytes, format='audio/mp3', start_time=0)
+            # Truque: Codifica o texto para URL e chama o Google Translate API direto
+            texto_safe = urllib.parse.quote(texto)
+            url_audio = f"https://translate.google.com/translate_tts?ie=UTF-8&q={texto_safe}&tl=pt&client=tw-ob"
+            
+            # Toca o áudio direto da URL (Zero processamento local)
+            st.markdown(f"""
+                <audio autoplay="true" style="display:none;">
+                <source src="{url_audio}" type="audio/mp3">
+                </audio>
+            """, unsafe_allow_html=True)
+            
+            # Backup player visível caso o autoplay falhe no navegador
+            st.audio(url_audio, format='audio/mp3')
+            
         except Exception as e:
             st.warning(f"[FALHA NO AUDIO]: {e}")
 
