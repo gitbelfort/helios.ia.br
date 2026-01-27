@@ -16,7 +16,7 @@ st.set_page_config(
     page_title="HELIOS | SYSTEM", 
     page_icon="🟡", 
     layout="wide",
-    initial_sidebar_state="collapsed" # Garante que a barra comece fechada/invisível
+    initial_sidebar_state="collapsed"
 )
 
 st.markdown("""
@@ -24,6 +24,10 @@ st.markdown("""
     @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
     
     .stApp { background-color: #000000; color: #FFD700; font-family: 'Share Tech Mono', monospace; }
+    
+    /* Esconde elementos da Sidebar padrão do Streamlit para visual Fullscreen */
+    [data-testid="stSidebar"] { display: none; }
+    [data-testid="stSidebarCollapsedControl"] { display: none; }
     
     h1, h2, h3, p, label, span, div, li { color: #FFD700 !important; font-family: 'Share Tech Mono', monospace !important; }
     
@@ -72,12 +76,14 @@ st.markdown("""
         bottom: 0;
         width: 100%;
         background-color: #000000;
-        color: #444 !important;
+        color: #00FF00 !important; /* Verde Matrix */
         text-align: center;
         padding: 10px;
-        font-size: 0.8em;
+        font-size: 0.9em;
         border-top: 1px solid #222;
         z-index: 999;
+        font-family: 'Share Tech Mono', monospace;
+        letter-spacing: 2px;
     }
     
     div[data-testid="stDialog"] { background-color: #000000; border: 2px solid #FFD700; }
@@ -117,29 +123,28 @@ ESTILOS = {
     "HYPERBOLD TYPOGRAPHY": "Hyperbold High-Contrast Aesthetic. Massive, heavy typography and brutalist geometric shapes. Strict Black & White palette with one neon accent. Urgent, impactful."
 }
 
-# --- LÓGICA DE AUTH (SEM SIDEBAR) ---
+# --- LÓGICA DE AUTH (CLEAN) ---
 api_key = None
 if CHAVE_MESTRA:
     api_key = CHAVE_MESTRA
 elif "GOOGLE_API_KEY" in st.secrets:
     api_key = st.secrets["GOOGLE_API_KEY"]
 
-# Se não achou a chave automaticamente, mostra o input no topo da tela
 if not api_key:
-    st.markdown("### 🔐 ACESSO RESTRITO")
+    # Se não tiver chave, mostra input centralizado
+    st.title("🟡 HELIOS SYSTEM")
+    st.markdown("### 🔐 ACESSO RESTRITO REQUERIDO")
     api_key = st.text_input("INSIRA A CHAVE DE ACESSO (API KEY)", type="password")
     if not api_key:
-        st.stop() # Para a execução aqui até digitar a senha
+        st.stop()
 
 client = genai.Client(api_key=api_key, http_options={"api_version": "v1beta"})
 
 # --- FUNÇÕES ---
-
 def process_uploaded_file(uploaded_file):
     try:
         if uploaded_file.type in ["image/png", "image/jpeg", "image/jpg", "image/webp"]:
             return types.Part(inline_data=types.Blob(mime_type=uploaded_file.type, data=uploaded_file.getvalue()))
-        
         text_content = ""
         if uploaded_file.type == "application/pdf":
             reader = pypdf.PdfReader(uploaded_file)
@@ -149,7 +154,6 @@ def process_uploaded_file(uploaded_file):
             for para in doc.paragraphs: text_content += para.text + "\n"
         else:
             text_content = uploaded_file.read().decode("utf-8")
-            
         return types.Part.from_text(text=text_content[:20000]) 
     except Exception as e:
         st.error(f"Erro ao processar arquivo: {e}")
@@ -222,7 +226,7 @@ def show_full_image(image_bytes, token_info):
             st.markdown(f"<div class='token-box'>💎 CUSTO DE ANÁLISE:<br>Input: {u.prompt_token_count} | Output: {u.candidates_token_count}</div>", unsafe_allow_html=True)
 
 # --- UI PRINCIPAL ---
-st.title("🟡 HELIOS // UNIVERSAL INFOGRAPHIC v3.1")
+st.title("🟡 HELIOS // UNIVERSAL INFOGRAPHIC v4.0")
 
 st.markdown(f"""
 <div class="instruction-box">
@@ -295,9 +299,9 @@ with col2:
                 st.session_state.last_image_bytes = img_bytes_raw
                 st.rerun()
 
-# --- RODAPÉ CENTRALIZADO ---
+# --- RODAPÉ ---
 st.markdown("""
 <div class="footer">
-    🟡 SISTEMA ONLINE &nbsp;|&nbsp; DOMÍNIO: HELIOS.IA.BR
+    🟢 SISTEMA ONLINE &nbsp;|&nbsp; HELIOS.IA.BR
 </div>
 """, unsafe_allow_html=True)
