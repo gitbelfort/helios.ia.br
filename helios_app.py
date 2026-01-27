@@ -1,5 +1,6 @@
 import streamlit as st
 import os
+import datetime
 from google import genai
 from google.genai import types
 from PIL import Image
@@ -29,36 +30,38 @@ st.markdown("""
     
     [data-testid='stFileUploader'] { border: 1px dashed #FFD700; padding: 20px; background-color: #050505; }
     
-    .instruction-box {
-        border: 1px solid #333;
-        background-color: #0a0a0a;
-        padding: 15px;
-        margin-bottom: 20px;
-        border-left: 5px solid #FFD700;
-    }
-    
-    .beta-warning {
-        color: #ff4b4b !important;
+    .token-box {
         font-size: 0.8em;
-        margin-top: -10px;
-        margin-bottom: 10px;
+        color: #888 !important;
+        margin-top: 10px;
+        border-top: 1px solid #333;
+        padding-top: 5px;
     }
     
+    /* Ajuste para o Modal */
+    div[data-testid="stDialog"] {
+        background-color: #000000;
+        border: 2px solid #FFD700;
+    }
+
     header {visibility: hidden;}
     </style>
 """, unsafe_allow_html=True)
 
-# --- MODELO HARDCODED (NANO BANANA PRO) ---
-MODELO_IMAGEM_FIXO = "gemini-3-pro-image-preview" # Modelo nativo de imagem do Gemini
+# --- MODELO HARDCODED ---
+MODELO_IMAGEM_FIXO = "gemini-3-pro-image-preview"
 
 # --- GERENCIAMENTO DE ESTADO ---
 if 'last_image_bytes' not in st.session_state:
     st.session_state.last_image_bytes = None
+if 'last_token_usage' not in st.session_state:
+    st.session_state.last_token_usage = None
 if 'reset_trigger' not in st.session_state:
     st.session_state.reset_trigger = 0
 
 def reset_all():
     st.session_state.last_image_bytes = None
+    st.session_state.last_token_usage = None
     st.session_state.reset_trigger += 1
 
 # --- BASE DE ESTILOS ---
@@ -88,70 +91,88 @@ if not api_key:
     st.warning(">> ALERTA: INSIRA A CHAVE DE ACESSO PARA INICIAR.")
     st.stop()
 
-# Cliente Principal
 client = genai.Client(api_key=api_key, http_options={"api_version": "v1beta"})
 
 # --- FUNÇÕES ---
-def extract_text_from_file(uploaded_file):
-    text = ""
+
+def process_uploaded_file(uploaded_file):
+    """
+    Processa tanto Texto (PDF/DOCX/TXT) quanto Imagens (JPG/PNG).
+    Retorna um objeto Part do Gemini pronto para envio.
+    """
     try:
+        # Caso 1: Imagens (Visão Computacional)
+        if uploaded_file.type in ["image/png", "image/jpeg", "image/jpg"]:
+            return types.Part.from_bytes(uploaded_file.getvalue(), mime_type=uploaded_file.type)
+        
+        # Caso 2: Documentos de Texto
+        text_content = ""
         if uploaded_file.type == "application/pdf":
             reader = pypdf.PdfReader(uploaded_file)
             for page in reader.pages:
-                text += page.extract_text() + "\n"
+                text_content += page.extract_text() + "\n"
         elif "wordprocessingml" in uploaded_file.type:
             doc = docx.Document(uploaded_file)
             for para in doc.paragraphs:
-                text += para.text + "\n"
+                text_content += para.text + "\n"
         else: # txt
-            text = uploaded_file.read().decode("utf-8")
-    except Exception as e:
-        st.error(f"Erro ao ler arquivo: {e}")
-        return None
-    return text
+            text_content = uploaded_file.read().decode("utf-8")
+            
+        return types.Part.from_text(text=text_content[:15000]) # Limite seguro de caracteres
 
-def create_super_prompt(resume_text, style_name, idioma, densidade):
-    # Lógica de Densidade para o Prompt
+    except Exception as e:
+        st.error(f"Erro ao processar arquivo: {e}")
+        return None
+
+def create_super_prompt(content_part, style_name, idioma, densidade):
+    # Prompt ajustado para aceitar Imagem ou Texto
     instrucao_densidade = ""
     if densidade == "Conciso":
         instrucao_densidade = "Use MINIMAL TEXT. Focus heavily on icons, large headlines, and visual flow. Only key keywords. Do not use full sentences."
     elif densidade == "Detalhado (BETA)":
-        instrucao_densidade = "Use HIGH TEXT DENSITY. Include detailed descriptions, full sentences where possible, and comprehensive lists. (WARNING: Ensure text remains legible)."
-    else: # Padrão
-        instrucao_densidade = "Use BALANCED TEXT and VISUALS. Use bullet points for achievements. Mix short descriptions with clear icons."
+        instrucao_densidade = "Use HIGH TEXT DENSITY. Include detailed descriptions. (WARNING: Ensure text remains legible)."
+    else:
+        instrucao_densidade = "Use BALANCED TEXT and VISUALS. Use bullet points. Mix short descriptions with clear icons."
 
-    prompt = f"""
+    prompt_text = f"""
     ROLE: You are a World-Class Art Director and Data Visualization Expert using Gemini Image Generation.
-    TASK: Convert the resume below into a highly detailed, text-rich IMAGE GENERATION PROMPT.
+    TASK: Analyze the provided content (Text or Image) and convert it into a highly detailed IMAGE GENERATION PROMPT.
     
     TARGET STYLE: {style_name}
     TARGET LANGUAGE FOR IMAGE TEXT: {idioma}
     INFORMATION DENSITY: {densidade}
     
     INSTRUCTIONS FOR THE PROMPT YOU WILL WRITE:
-    1.  The output must be a single, long, descriptive prompt in English (but commanding the text inside the image to be in {idioma}).
-    2.  Demand a "Text-Rich Infographic Layout".
-    3.  **CRITICAL:** Explicitly instruction the model to render ALL visible text in {idioma}.
-    4.  **DENSITY CONTROL:** {instrucao_densidade}
-    5.  Explicitly ask to render the Candidate's Name as the Main Title.
-    6.  Ask for a "Chronological Path" or "Timeline" visual structure.
-    7.  Force the chosen style ({style_name}).
-    8.  Demand "High fidelity text rendering", "Legible fonts".
+    1.  Output a single, long, descriptive prompt in English commanding the text inside the image to be in {idioma}.
+    2.  If the input is a resume: Create a career timeline infographic.
+    3.  If the input is an image/diagram: Recreate the concept as a polished infographic in the chosen style.
+    4.  **CRITICAL:** Render ALL visible text in {idioma}.
+    5.  **DENSITY CONTROL:** {instrucao_densidade}
+    6.  Force the chosen style ({style_name}).
     
-    RESUME DATA:
-    {resume_text[:8000]}
-    
-    OUTPUT: A raw prompt text. Start with: "A high-resolution, text-rich infographic poster in {style_name} style, text in {idioma}..."
+    OUTPUT START: "A high-resolution, text-rich infographic poster in {style_name} style, text in {idioma}..."
     """
+    
     try:
         response = client.models.generate_content(
             model="gemini-2.0-flash-exp",
-            contents=prompt
+            contents=[
+                types.Part.from_text(prompt_text),
+                content_part # Aqui entra o Texto ou a Imagem
+            ]
         )
-        return response.text
+        
+        # Captura Token Usage se disponível
+        usage = "N/A"
+        if response.usage_metadata:
+            u = response.usage_metadata
+            usage = f"Input: {u.prompt_token_count} | Output: {u.candidates_token_count} | Total: {u.total_token_count}"
+            
+        return response.text, usage
+        
     except Exception as e:
-        st.error(f"Erro na criação do prompt: {e}")
-        return None
+        st.error(f"Erro na análise: {e}")
+        return None, None
 
 def generate_image(prompt_visual, aspect_ratio):
     ar = "1:1"
@@ -159,93 +180,119 @@ def generate_image(prompt_visual, aspect_ratio):
     elif "9:16" in aspect_ratio: ar = "9:16"
 
     try:
-        # Chamada NATIVA do Gemini para imagem
         response = client.models.generate_content(
             model=MODELO_IMAGEM_FIXO,
             contents=[prompt_visual],
             config=types.GenerateContentConfig(
                 response_modalities=["IMAGE"],
-                image_config=types.ImageConfig(
-                    aspect_ratio=ar
-                )
+                image_config=types.ImageConfig(aspect_ratio=ar)
             )
         )
         for part in response.parts:
             if part.inline_data:
                 return part.inline_data.data
         return None
-
     except Exception as e:
-        st.error(f"Erro no Motor Nano Banana ({MODELO_IMAGEM_FIXO}): {e}")
+        st.error(f"Erro no Motor ({MODELO_IMAGEM_FIXO}): {e}")
         return None
 
+# --- MODAL DE VISUALIZAÇÃO ---
+@st.dialog("VISUALIZAÇÃO EM ALTA RESOLUÇÃO", width="large")
+def show_full_image(image_bytes, token_info):
+    img = Image.open(io.BytesIO(image_bytes))
+    st.image(img, use_container_width=True)
+    
+    # Nome do Arquivo com Timestamp
+    ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    filename = f"resumo-grafico-heliosia-{ts}.png"
+    
+    col_dl, col_tok = st.columns([1, 1])
+    with col_dl:
+        st.download_button(
+            label=f"⬇️ BAIXAR ARQUIVO ({filename})",
+            data=image_bytes,
+            file_name=filename,
+            mime="image/png",
+            type="primary"
+        )
+    with col_tok:
+        if token_info:
+            st.markdown(f"<div class='token-box'>💎 CUSTO DE ANÁLISE (TOKENS):<br>{token_info}</div>", unsafe_allow_html=True)
+
 # --- INTERFACE PRINCIPAL ---
-st.title("HELIOS // RESUME INFOGRAPHIC")
+st.title("HELIOS // RESUME INFOGRAPHIC v2.2")
 
 st.markdown(f"""
 <div class="instruction-box">
     <strong>📘 MANUAL DE OPERAÇÃO:</strong>
     <ul>
-        <li><strong>Motor Ativo:</strong> <code>{MODELO_IMAGEM_FIXO}</code> (Nano Banana Pro).</li>
-        <li><strong>Processo:</strong> Suba o arquivo -> Escolha Idioma/Densidade -> Clique em GERAR.</li>
-        <li><strong>Nota:</strong> O modo "Detalhado" pode gerar erros de texto (alucinações de caracteres). Use com cautela.</li>
+        <li><strong>Inputs:</strong> Aceita PDF, DOCX, TXT e <strong>IMAGENS (JPG/PNG até 10MB)</strong>.</li>
+        <li><strong>Motor:</strong> <code>{MODELO_IMAGEM_FIXO}</code> (Nano Banana Pro).</li>
+        <li><strong>Nota:</strong> Se já houver imagem gerada, clique em GERAR para substituir (sem aviso prévio).</li>
     </ul>
 </div>
 """, unsafe_allow_html=True)
-
-st.markdown("---")
 
 col1, col2 = st.columns([1, 1])
 reset_k = st.session_state.reset_trigger
 
 with col1:
-    st.subheader(">> 1. UPLOAD DO CURRÍCULO")
-    uploaded_file = st.file_uploader("ARQUIVO", type=["pdf", "docx", "txt"], key=f"up_{reset_k}")
+    st.subheader(">> 1. INPUT (TEXTO OU IMAGEM)")
+    # Aceita Imagens agora
+    uploaded_file = st.file_uploader(
+        "ARQUIVO FONTE", 
+        type=["pdf", "docx", "txt", "jpg", "jpeg", "png"], 
+        key=f"up_{reset_k}"
+    )
 
-    st.subheader(">> 2. CONFIGURAÇÃO VISUAL")
+    st.subheader(">> 2. CONFIGURAÇÃO")
     estilo_selecionado = st.selectbox("ESTILO VISUAL", list(ESTILOS.keys()), key=f"st_{reset_k}")
     formato_selecionado = st.selectbox("FORMATO", ["1:1 (Quadrado)", "16:9 (Paisagem)", "9:16 (Stories)"], key=f"fmt_{reset_k}")
     
     st.subheader(">> 3. CONTEÚDO")
-    # Novos seletores de Idioma e Densidade
-    idioma_selecionado = st.selectbox("IDIOMA DO INFOGRÁFICO", ["Português (Brasil)", "Inglês", "Espanhol", "Francês"], key=f"lang_{reset_k}")
-    
-    densidade_selecionada = st.selectbox("DENSIDADE DE INFORMAÇÃO", ["Conciso", "Padrão", "Detalhado (BETA)"], index=1, key=f"dens_{reset_k}")
-    
-    if "Detalhado" in densidade_selecionada:
-        st.markdown("<p class='beta-warning'>⚠️ AVISO: Alta densidade aumenta o risco de erros de escrita na imagem.</p>", unsafe_allow_html=True)
+    idioma_selecionado = st.selectbox("IDIOMA", ["Português (Brasil)", "Inglês", "Espanhol", "Francês"], key=f"lang_{reset_k}")
+    densidade_selecionada = st.selectbox("DENSIDADE", ["Conciso", "Padrão", "Detalhado (BETA)"], index=1, key=f"dens_{reset_k}")
 
 with col2:
-    st.subheader(">> 4. RENDERIZAÇÃO")
-    image_placeholder = st.empty()
+    st.subheader(">> 4. RESULTADO")
+    preview_placeholder = st.empty()
     
+    # Se existe imagem no estado, mostra PREVIEW
     if st.session_state.last_image_bytes:
-        image = Image.open(io.BytesIO(st.session_state.last_image_bytes))
-        image_placeholder.image(image, caption=f"INFOGRÁFICO ({MODELO_IMAGEM_FIXO})", use_container_width=True)
+        img_preview = Image.open(io.BytesIO(st.session_state.last_image_bytes))
+        # Mostra menor (width=400) para caber na tela
+        preview_placeholder.image(img_preview, caption="PREVIEW (Clique abaixo para ampliar)", width=400)
         
-        buf = io.BytesIO()
-        image.save(buf, format="PNG")
-        st.download_button("⬇️ BAIXAR (PNG)", data=buf.getvalue(), file_name="helios_resume.png", mime="image/png")
-        st.info("Para gerar uma nova versão, clique em GERAR novamente.")
+        # Botão para abrir o Modal
+        if st.button("🔍 AMPLIAR / DOWNLOAD", type="secondary", key=f"modal_btn_{reset_k}"):
+            show_full_image(st.session_state.last_image_bytes, st.session_state.last_token_usage)
 
-    pode_gerar = uploaded_file is not None and estilo_selecionado and formato_selecionado
+    # Lógica de Geração
+    pode_gerar = uploaded_file is not None and estilo_selecionado
     
-    if st.button("GERAR INFOGRÁFICO [RENDER]", type="primary", disabled=not pode_gerar, key=f"btn_{reset_k}"):
+    label_btn = "GERAR INFOGRÁFICO [RENDER]"
+    if st.session_state.last_image_bytes:
+        label_btn = "♻️ RE-GERAR (SUBSTITUIR ATUAL)"
+    
+    if st.button(label_btn, type="primary", disabled=not pode_gerar, key=f"btn_gen_{reset_k}"):
         if uploaded_file:
-            with st.spinner(">> 1/3 LENDO DOCUMENTO..."):
-                texto_cv = extract_text_from_file(uploaded_file)
+            # Limpa preview anterior visualmente
+            preview_placeholder.empty()
+            st.session_state.last_image_bytes = None
             
-            if texto_cv:
-                with st.spinner(f">> 2/3 DIREÇÃO DE ARTE ({idioma_selecionado.upper()})..."):
-                    # Passamos os novos parâmetros para o criador de prompts
-                    prompt_otimizado = create_super_prompt(texto_cv, estilo_selecionado, idioma_selecionado, densidade_selecionada)
+            with st.spinner(">> 1/3 PROCESSANDO INPUT (VISÃO/TEXTO)..."):
+                content_part = process_uploaded_file(uploaded_file)
+            
+            if content_part:
+                with st.spinner(f">> 2/3 DIREÇÃO DE ARTE ({idioma_selecionado})..."):
+                    prompt_otimizado, tokens = create_super_prompt(content_part, estilo_selecionado, idioma_selecionado, densidade_selecionada)
                 
                 if prompt_otimizado:
-                    with st.spinner(f">> 3/3 RENDERIZANDO NANO BANANA..."):
+                    with st.spinner(f">> 3/3 RENDERIZANDO PIXELS..."):
                         prompt_final = f"{prompt_otimizado} Style Details: {ESTILOS[estilo_selecionado]}"
-                        
                         img_bytes_raw = generate_image(prompt_final, formato_selecionado)
                         
                         if img_bytes_raw:
                             st.session_state.last_image_bytes = img_bytes_raw
-                            st.rerun()
+                            st.session_state.last_token_usage = tokens
+                            st.rerun() # Recarrega para exibir o novo preview
