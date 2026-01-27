@@ -9,11 +9,15 @@ import pypdf
 import docx
 
 # --- ÁREA DE SEGURANÇA (HARDCODE OPCIONAL) ---
-# Deixe como None se estiver usando o Secrets do Streamlit (Recomendado)
 CHAVE_MESTRA = None 
 
 # --- CONFIGURAÇÃO VISUAL TRON ---
-st.set_page_config(page_title="HELIOS | SYSTEM", page_icon="🟡", layout="wide")
+st.set_page_config(
+    page_title="HELIOS | SYSTEM", 
+    page_icon="🟡", 
+    layout="wide",
+    initial_sidebar_state="collapsed" # Garante que a barra comece fechada/invisível
+)
 
 st.markdown("""
     <style>
@@ -61,13 +65,19 @@ st.markdown("""
         padding-top: 5px;
     }
     
-    .api-success {
-        color: #00FF00 !important;
-        font-size: 0.8em;
-        border: 1px solid #00FF00;
-        padding: 5px;
+    /* Footer Centralizado */
+    .footer {
+        position: fixed;
+        left: 0;
+        bottom: 0;
+        width: 100%;
+        background-color: #000000;
+        color: #444 !important;
         text-align: center;
-        margin-bottom: 10px;
+        padding: 10px;
+        font-size: 0.8em;
+        border-top: 1px solid #222;
+        z-index: 999;
     }
     
     div[data-testid="stDialog"] { background-color: #000000; border: 2px solid #FFD700; }
@@ -107,34 +117,19 @@ ESTILOS = {
     "HYPERBOLD TYPOGRAPHY": "Hyperbold High-Contrast Aesthetic. Massive, heavy typography and brutalist geometric shapes. Strict Black & White palette with one neon accent. Urgent, impactful."
 }
 
-# --- LÓGICA DE AUTENTICAÇÃO INTELIGENTE ---
-with st.sidebar:
-    st.title("🟡 HELIOS")
-    st.markdown("**UNIVERSAL INFOGRAPHIC**")
-    
-    api_key = None
-    
-    # 1. Prioridade Alta: Chave no código
-    if CHAVE_MESTRA:
-        api_key = CHAVE_MESTRA
-        st.markdown('<div class="api-success">🔑 CHAVE MESTRA: ATIVA</div>', unsafe_allow_html=True)
-    
-    # 2. Prioridade Média: Secrets do Streamlit (Onde você configurou)
-    elif "GOOGLE_API_KEY" in st.secrets:
-        api_key = st.secrets["GOOGLE_API_KEY"]
-        # Se entrar aqui, o campo manual NÃO aparece.
-        st.markdown('<div class="api-success">🔑 ACESSO SEGURO: CONECTADO</div>', unsafe_allow_html=True)
-    
-    # 3. Prioridade Baixa: Manual (Só aparece se os 2 acima falharem)
-    else:
-        api_key = st.text_input("CHAVE DE ACESSO (API KEY)", type="password")
-    
-    st.markdown("---")
-    st.info("SISTEMA ONLINE\nDOMÍNIO: HELIOS.IA.BR")
+# --- LÓGICA DE AUTH (SEM SIDEBAR) ---
+api_key = None
+if CHAVE_MESTRA:
+    api_key = CHAVE_MESTRA
+elif "GOOGLE_API_KEY" in st.secrets:
+    api_key = st.secrets["GOOGLE_API_KEY"]
 
+# Se não achou a chave automaticamente, mostra o input no topo da tela
 if not api_key:
-    st.warning(">> ALERTA: CONFIGURE A API KEY NO SECRETS OU DIGITE NA BARRA LATERAL.")
-    st.stop()
+    st.markdown("### 🔐 ACESSO RESTRITO")
+    api_key = st.text_input("INSIRA A CHAVE DE ACESSO (API KEY)", type="password")
+    if not api_key:
+        st.stop() # Para a execução aqui até digitar a senha
 
 client = genai.Client(api_key=api_key, http_options={"api_version": "v1beta"})
 
@@ -227,7 +222,7 @@ def show_full_image(image_bytes, token_info):
             st.markdown(f"<div class='token-box'>💎 CUSTO DE ANÁLISE:<br>Input: {u.prompt_token_count} | Output: {u.candidates_token_count}</div>", unsafe_allow_html=True)
 
 # --- UI PRINCIPAL ---
-st.title("HELIOS // UNIVERSAL INFOGRAPHIC v3.0")
+st.title("🟡 HELIOS // UNIVERSAL INFOGRAPHIC v3.1")
 
 st.markdown(f"""
 <div class="instruction-box">
@@ -299,3 +294,10 @@ with col2:
             if img_bytes_raw:
                 st.session_state.last_image_bytes = img_bytes_raw
                 st.rerun()
+
+# --- RODAPÉ CENTRALIZADO ---
+st.markdown("""
+<div class="footer">
+    🟡 SISTEMA ONLINE &nbsp;|&nbsp; DOMÍNIO: HELIOS.IA.BR
+</div>
+""", unsafe_allow_html=True)
