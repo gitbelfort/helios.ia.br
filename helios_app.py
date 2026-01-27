@@ -9,7 +9,7 @@ import pypdf
 import docx
 
 # --- CONFIGURAÇÃO VISUAL TRON ---
-st.set_page_config(page_title="HELIOS | RESUME GEN", page_icon="🟡", layout="wide")
+st.set_page_config(page_title="HELIOS | UNIVERSAL GEN", page_icon="🟡", layout="wide")
 
 st.markdown("""
     <style>
@@ -38,7 +38,6 @@ st.markdown("""
         padding-top: 5px;
     }
     
-    /* Ajuste para o Modal */
     div[data-testid="stDialog"] {
         background-color: #000000;
         border: 2px solid #FFD700;
@@ -48,10 +47,10 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- MODELO HARDCODED ---
+# --- MODELO ---
 MODELO_IMAGEM_FIXO = "gemini-3-pro-image-preview"
 
-# --- GERENCIAMENTO DE ESTADO ---
+# --- ESTADO ---
 if 'last_image_bytes' not in st.session_state:
     st.session_state.last_image_bytes = None
 if 'last_token_usage' not in st.session_state:
@@ -64,22 +63,22 @@ def reset_all():
     st.session_state.last_token_usage = None
     st.session_state.reset_trigger += 1
 
-# --- BASE DE ESTILOS ---
+# --- ESTILOS ---
 ESTILOS = {
-    "ANIME BATTLE AESTHETIC": "High-Octane Anime Battle aesthetic illustration. A blend of intense action manga frames and vibrant, modern anime coloring. Settings should feature dramatic energy effects (speed lines, power auras, impact flashes), sharp angles, and highly expressive, dynamic character designs. Colors are intense and saturated (electric blues, fiery reds, deep purples). The atmosphere is intense, passionate, and empowering.",
-    "3D NEUMORPHISM AESTHETIC": "Tactile 3D Neumorphism aesthetic illustration. A blend of modern UI design and satisfying, touchable digital objects. Settings should feature ultra-soft UI elements where shapes look extruded from the background using realistic soft shadows and light highlights. Finishes are glossy, frosted glass, or soft matte silicone. The color palette is clean and minimalist (off-whites, soft light grays, muted pastels). Shapes are inflated, puffy, and rounded.",
-    "90s/Y2K PIXEL AESTHETIC": "90s/Y2K Retro Video Game aesthetic illustration. A blend of 16-bit pixel art and early internet culture design. Settings should feature bright neon or 'bubblegum' colors (hot pinks, electric blues, lime greens, bright yellows), chunky rounded typography, and pixelated icons. Apply a subtle CRT monitor scanline effect or slight digital glitch texture. The atmosphere is energetic, playful, loud, and radically nostalgic.",
-    "WHITEBOARD ANIMATION": "Classic Whiteboard Animation aesthetic illustration. A blend of hand-drawn dry-erase marker sketches and direct visual storytelling. Settings should feature a clean bright white background with subtle marker residue smudges. Illustrations are done in standard marker colors (black, blue, red, green) with visible marker stroke textures. The hand drawing the elements should occasionally appear.",
-    "MINI WORLD (DIORAMA)": "Isometric Miniature Diorama Aesthetic. A blend of playful voxel art and macro photography. The world looks like a tiny, living model kit. Settings should feature vibrant, saturated colors, soft 'toy-like' textures (matte plastic, clay, smooth wood), and distinct geometric shapes. Apply a 'tilt-shift' lens effect (blurred edges, sharp focus on the subject) to exaggerate the small scale.",
-    "PHOTO REALIST": "Ultra-realistic 8k cinematic photography combined with a high-end modern lifestyle aesthetic. Settings should feature contemporary, sophisticated interior design with minimalist decor and clean lines. Use soft natural lighting to create a cozy yet polished atmosphere. Focus on sharp details, realistic textures, deep depth of field.",
-    "RETRO-FUTURISM": "Nostalgic Retro Futurism Aesthetic photography illustration. A blend of comforting 90s sci-fi warmth and modern digital sharpness. Settings should feature neon lighting (teals, deep purples, warm oranges), chrome surfaces reflecting the environment, and subtle technological overlays. Apply a cinematic film grain or mild VHS texture to create a 'memory' feel.",
-    "HYPERBOLD TYPOGRAPHY": "Hyperbold High-Contrast Aesthetic photography illustration. The visual focus is on massive, heavy typography and brutalist geometric shapes. Use a strict Black & White palette with one single vibrant neon accent color (e.g., Acid Green or Electric Blue). Lighting should be high-contrast 'noir' style (hard silhouettes, spotlighting). The text itself acts as the main visual element. The atmosphere is urgent, impactful, and bold."
+    "ANIME BATTLE AESTHETIC": "High-Octane Anime Battle aesthetic illustration. A blend of intense action manga frames and vibrant, modern anime coloring. Dramatic energy effects, sharp angles. Colors are intense and saturated.",
+    "3D NEUMORPHISM AESTHETIC": "Tactile 3D Neumorphism aesthetic illustration. Modern UI design, satisfying digital objects. Ultra-soft UI elements, extruded shapes, realistic soft shadows. Clean, minimalist palette.",
+    "90s/Y2K PIXEL AESTHETIC": "90s/Y2K Retro Video Game aesthetic illustration. 16-bit pixel art, early internet culture. Bright neon colors, chunky rounded typography, pixelated icons. CRT monitor scanline effect.",
+    "WHITEBOARD ANIMATION": "Classic Whiteboard Animation aesthetic illustration. Hand-drawn dry-erase marker sketches. Clean bright white background with subtle marker residue. Educational tone.",
+    "MINI WORLD (DIORAMA)": "Isometric Miniature Diorama Aesthetic. Playful voxel art and macro photography. Tiny, living model kit. Vibrant colors, soft 'toy-like' textures. Tilt-shift effect.",
+    "PHOTO REALIST": "Ultra-realistic 8k cinematic photography. Modern lifestyle aesthetic. Sophisticated interior design, minimalist decor. Soft natural lighting. Sharp details, realistic textures.",
+    "RETRO-FUTURISM": "Nostalgic Retro Futurism Aesthetic. 90s sci-fi warmth, modern digital sharpness. Neon lighting, chrome surfaces, technological overlays. Cinematic film grain.",
+    "HYPERBOLD TYPOGRAPHY": "Hyperbold High-Contrast Aesthetic. Massive, heavy typography and brutalist geometric shapes. Strict Black & White palette with one neon accent. Urgent, impactful."
 }
 
-# --- SIDEBAR & AUTH ---
+# --- AUTH ---
 with st.sidebar:
     st.title("🟡 HELIOS")
-    st.markdown("**RESUME INFOGRAPHIC GEN**")
+    st.markdown("**UNIVERSAL INFOGRAPHIC GEN**")
     api_key = st.text_input("CHAVE DE ACESSO (API KEY)", type="password")
     st.markdown("---")
     if st.button("♻️ LIMPAR / NOVA GERAÇÃO"):
@@ -96,16 +95,12 @@ client = genai.Client(api_key=api_key, http_options={"api_version": "v1beta"})
 # --- FUNÇÕES ---
 
 def process_uploaded_file(uploaded_file):
-    """
-    Processa tanto Texto (PDF/DOCX/TXT) quanto Imagens (JPG/PNG).
-    Retorna um objeto Part do Gemini pronto para envio.
-    """
     try:
-        # Caso 1: Imagens (Visão Computacional)
-        if uploaded_file.type in ["image/png", "image/jpeg", "image/jpg"]:
+        # IMAGEM
+        if uploaded_file.type in ["image/png", "image/jpeg", "image/jpg", "image/webp"]:
             return types.Part.from_bytes(uploaded_file.getvalue(), mime_type=uploaded_file.type)
         
-        # Caso 2: Documentos de Texto
+        # TEXTO
         text_content = ""
         if uploaded_file.type == "application/pdf":
             reader = pypdf.PdfReader(uploaded_file)
@@ -118,60 +113,63 @@ def process_uploaded_file(uploaded_file):
         else: # txt
             text_content = uploaded_file.read().decode("utf-8")
             
-        return types.Part.from_text(text=text_content[:15000]) # Limite seguro de caracteres
+        return types.Part.from_text(text=text_content[:20000]) 
 
     except Exception as e:
         st.error(f"Erro ao processar arquivo: {e}")
         return None
 
 def create_super_prompt(content_part, style_name, idioma, densidade):
-    # Prompt ajustado para aceitar Imagem ou Texto
-    instrucao_densidade = ""
-    if densidade == "Conciso":
-        instrucao_densidade = "Use MINIMAL TEXT. Focus heavily on icons, large headlines, and visual flow. Only key keywords. Do not use full sentences."
-    elif densidade == "Detalhado (BETA)":
-        instrucao_densidade = "Use HIGH TEXT DENSITY. Include detailed descriptions. (WARNING: Ensure text remains legible)."
-    else:
-        instrucao_densidade = "Use BALANCED TEXT and VISUALS. Use bullet points. Mix short descriptions with clear icons."
-
+    # Lógica de Inteligência EXPANDIDA para qualquer objeto
     prompt_text = f"""
-    ROLE: You are a World-Class Art Director and Data Visualization Expert using Gemini Image Generation.
-    TASK: Analyze the provided content (Text or Image) and convert it into a highly detailed IMAGE GENERATION PROMPT.
+    ROLE: You are an Elite Content Analyst and Art Director using Gemini Image Generation.
+    TASK: Analyze the provided Input (Text or Image) and generate a detailed IMAGE PROMPT for an infographic.
+
+    INPUT ANALYSIS & CLASSIFICATION LOGIC:
+    1.  **IF TEXT/RESUME:** Create a "Career Timeline" infographic. Extract roles, skills, dates.
+    2.  **IF IMAGE IS A DISH/FOOD:** Identify it. Create a "Recipe & Variations" infographic.
+    3.  **IF IMAGE IS A PLACE/MONUMENT:** Identify it. Create a "Travel Guide & History" infographic.
+    4.  **IF IMAGE IS A LIVING BEING (Animal/Plant/Pet):** Identify the species/breed. Create a "Biology, Care & Fun Facts" infographic.
+    5.  **IF IMAGE IS A PHYSICAL OBJECT (Gadget/Tool/Toy/Furniture/Car):** Identify the item. Create a "Technical Specs, History & Utility" infographic. Break down its parts or explain how it works.
+    6.  **IF IMAGE IS A CHARACTER/ART:** Analyze the design. Create a "Character Lore & Stats" infographic.
+    7.  **IF IMAGE IS UNCLEAR:** OUTPUT EXACTLY: "INVALID_CONTENT".
+
+    OUTPUT CONFIGURATION:
+    -   Target Style: {style_name}
+    -   Target Language (FOR THE TEXT INSIDE IMAGE): {idioma}
+    -   Density: {densidade}
+
+    INSTRUCTIONS FOR THE FINAL PROMPT:
+    -   Write a single, descriptive prompt for an image generator (Nano Banana).
+    -   Explicitly command: "Render all visible text in {idioma}".
+    -   Describe the layout, the central subject, and the surrounding data blocks (text/charts).
     
-    TARGET STYLE: {style_name}
-    TARGET LANGUAGE FOR IMAGE TEXT: {idioma}
-    INFORMATION DENSITY: {densidade}
-    
-    INSTRUCTIONS FOR THE PROMPT YOU WILL WRITE:
-    1.  Output a single, long, descriptive prompt in English commanding the text inside the image to be in {idioma}.
-    2.  If the input is a resume: Create a career timeline infographic.
-    3.  If the input is an image/diagram: Recreate the concept as a polished infographic in the chosen style.
-    4.  **CRITICAL:** Render ALL visible text in {idioma}.
-    5.  **DENSITY CONTROL:** {instrucao_densidade}
-    6.  Force the chosen style ({style_name}).
-    
-    OUTPUT START: "A high-resolution, text-rich infographic poster in {style_name} style, text in {idioma}..."
+    START OUTPUT WITH: "A high-resolution, text-rich infographic in {style_name} style..."
     """
     
     try:
         response = client.models.generate_content(
             model="gemini-2.0-flash-exp",
             contents=[
-                types.Part.from_text(prompt_text),
-                content_part # Aqui entra o Texto ou a Imagem
+                types.Part.from_text(text=prompt_text),
+                content_part
             ]
         )
         
-        # Captura Token Usage se disponível
+        result_text = response.text
+        
+        if "INVALID_CONTENT" in result_text:
+            return "INVALID", None
+            
         usage = "N/A"
         if response.usage_metadata:
             u = response.usage_metadata
             usage = f"Input: {u.prompt_token_count} | Output: {u.candidates_token_count} | Total: {u.total_token_count}"
             
-        return response.text, usage
+        return result_text, usage
         
     except Exception as e:
-        st.error(f"Erro na análise: {e}")
+        st.error(f"Erro na análise inteligente: {e}")
         return None, None
 
 def generate_image(prompt_visual, aspect_ratio):
@@ -182,7 +180,7 @@ def generate_image(prompt_visual, aspect_ratio):
     try:
         response = client.models.generate_content(
             model=MODELO_IMAGEM_FIXO,
-            contents=[prompt_visual],
+            contents=[types.Part.from_text(text=prompt_visual)],
             config=types.GenerateContentConfig(
                 response_modalities=["IMAGE"],
                 image_config=types.ImageConfig(aspect_ratio=ar)
@@ -196,20 +194,19 @@ def generate_image(prompt_visual, aspect_ratio):
         st.error(f"Erro no Motor ({MODELO_IMAGEM_FIXO}): {e}")
         return None
 
-# --- MODAL DE VISUALIZAÇÃO ---
-@st.dialog("VISUALIZAÇÃO EM ALTA RESOLUÇÃO", width="large")
+# --- MODAL ---
+@st.dialog("VISUALIZAÇÃO HD", width="large")
 def show_full_image(image_bytes, token_info):
     img = Image.open(io.BytesIO(image_bytes))
     st.image(img, use_container_width=True)
     
-    # Nome do Arquivo com Timestamp
     ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     filename = f"resumo-grafico-heliosia-{ts}.png"
     
     col_dl, col_tok = st.columns([1, 1])
     with col_dl:
         st.download_button(
-            label=f"⬇️ BAIXAR ARQUIVO ({filename})",
+            label=f"⬇️ BAIXAR ({filename})",
             data=image_bytes,
             file_name=filename,
             mime="image/png",
@@ -217,18 +214,18 @@ def show_full_image(image_bytes, token_info):
         )
     with col_tok:
         if token_info:
-            st.markdown(f"<div class='token-box'>💎 CUSTO DE ANÁLISE (TOKENS):<br>{token_info}</div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='token-box'>💎 CONSUMO DE INTELEGÊNCIA:<br>{token_info}</div>", unsafe_allow_html=True)
 
-# --- INTERFACE PRINCIPAL ---
-st.title("HELIOS // RESUME INFOGRAPHIC v2.2")
+# --- UI ---
+st.title("HELIOS // UNIVERSAL INFOGRAPHIC v2.4")
 
 st.markdown(f"""
 <div class="instruction-box">
-    <strong>📘 MANUAL DE OPERAÇÃO:</strong>
+    <strong>📘 MANUAL DE OPERAÇÃO UNIVERSAL:</strong>
     <ul>
-        <li><strong>Inputs:</strong> Aceita PDF, DOCX, TXT e <strong>IMAGENS (JPG/PNG até 10MB)</strong>.</li>
-        <li><strong>Motor:</strong> <code>{MODELO_IMAGEM_FIXO}</code> (Nano Banana Pro).</li>
-        <li><strong>Nota:</strong> Se já houver imagem gerada, clique em GERAR para substituir (sem aviso prévio).</li>
+        <li><strong>Qualquer Input:</strong> Suba Currículos, Textos ou <strong>FOTOS DE QUALQUER COISA</strong>.</li>
+        <li><strong>Análise Inteligente:</strong> O sistema identifica se é um animal, objeto, lugar ou comida e adapta o infográfico.</li>
+        <li><strong>Exemplo:</strong> Foto de um Gato -> Infográfico sobre a raça. Foto de um Tênis -> Infográfico técnico.</li>
     </ul>
 </div>
 """, unsafe_allow_html=True)
@@ -237,11 +234,10 @@ col1, col2 = st.columns([1, 1])
 reset_k = st.session_state.reset_trigger
 
 with col1:
-    st.subheader(">> 1. INPUT (TEXTO OU IMAGEM)")
-    # Aceita Imagens agora
+    st.subheader(">> 1. INPUT UNIVERSAL")
     uploaded_file = st.file_uploader(
-        "ARQUIVO FONTE", 
-        type=["pdf", "docx", "txt", "jpg", "jpeg", "png"], 
+        "ARQUIVO (DOCS OU IMAGENS)", 
+        type=["pdf", "docx", "txt", "jpg", "jpeg", "png", "webp"], 
         key=f"up_{reset_k}"
     )
 
@@ -257,17 +253,13 @@ with col2:
     st.subheader(">> 4. RESULTADO")
     preview_placeholder = st.empty()
     
-    # Se existe imagem no estado, mostra PREVIEW
     if st.session_state.last_image_bytes:
         img_preview = Image.open(io.BytesIO(st.session_state.last_image_bytes))
-        # Mostra menor (width=400) para caber na tela
         preview_placeholder.image(img_preview, caption="PREVIEW (Clique abaixo para ampliar)", width=400)
         
-        # Botão para abrir o Modal
         if st.button("🔍 AMPLIAR / DOWNLOAD", type="secondary", key=f"modal_btn_{reset_k}"):
             show_full_image(st.session_state.last_image_bytes, st.session_state.last_token_usage)
 
-    # Lógica de Geração
     pode_gerar = uploaded_file is not None and estilo_selecionado
     
     label_btn = "GERAR INFOGRÁFICO [RENDER]"
@@ -276,18 +268,19 @@ with col2:
     
     if st.button(label_btn, type="primary", disabled=not pode_gerar, key=f"btn_gen_{reset_k}"):
         if uploaded_file:
-            # Limpa preview anterior visualmente
             preview_placeholder.empty()
             st.session_state.last_image_bytes = None
             
-            with st.spinner(">> 1/3 PROCESSANDO INPUT (VISÃO/TEXTO)..."):
+            with st.spinner(">> 1/3 CÉREBRO GEMINI: IDENTIFICANDO OBJETO/SER..."):
                 content_part = process_uploaded_file(uploaded_file)
             
             if content_part:
-                with st.spinner(f">> 2/3 DIREÇÃO DE ARTE ({idioma_selecionado})..."):
+                with st.spinner(f">> 2/3 CRIANDO ROTEIRO ({idioma_selecionado})..."):
                     prompt_otimizado, tokens = create_super_prompt(content_part, estilo_selecionado, idioma_selecionado, densidade_selecionada)
                 
-                if prompt_otimizado:
+                if prompt_otimizado == "INVALID":
+                    st.error("🚫 ERRO: Conteúdo não identificado. Certifique-se que o objeto/ser esteja visível.")
+                elif prompt_otimizado:
                     with st.spinner(f">> 3/3 RENDERIZANDO PIXELS..."):
                         prompt_final = f"{prompt_otimizado} Style Details: {ESTILOS[estilo_selecionado]}"
                         img_bytes_raw = generate_image(prompt_final, formato_selecionado)
@@ -295,4 +288,4 @@ with col2:
                         if img_bytes_raw:
                             st.session_state.last_image_bytes = img_bytes_raw
                             st.session_state.last_token_usage = tokens
-                            st.rerun() # Recarrega para exibir o novo preview
+                            st.rerun()
