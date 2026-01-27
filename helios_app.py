@@ -1,7 +1,7 @@
 import streamlit as st
 import os
 from google import genai
-from google.genai import types # Importação crucial para o novo método
+from google.genai import types
 from PIL import Image
 import io
 import pypdf
@@ -37,12 +37,19 @@ st.markdown("""
         border-left: 5px solid #FFD700;
     }
     
+    .beta-warning {
+        color: #ff4b4b !important;
+        font-size: 0.8em;
+        margin-top: -10px;
+        margin-bottom: 10px;
+    }
+    
     header {visibility: hidden;}
     </style>
 """, unsafe_allow_html=True)
 
-# --- MODELO HARDCODED (O VERDADEIRO NANO BANANA PRO) ---
-MODELO_IMAGEM_FIXO = "gemini-3-pro-image-preview" # Na verdade, pode precisar ser 'gemini-2.0-flash' dependendo da liberação, mas vamos tentar o Pro Preview.
+# --- MODELO HARDCODED (NANO BANANA PRO) ---
+MODELO_IMAGEM_FIXO = "gemini-3-pro-image-preview" # Modelo nativo de imagem do Gemini
 
 # --- GERENCIAMENTO DE ESTADO ---
 if 'last_image_bytes' not in st.session_state:
@@ -81,7 +88,7 @@ if not api_key:
     st.warning(">> ALERTA: INSIRA A CHAVE DE ACESSO PARA INICIAR.")
     st.stop()
 
-# Cliente Principal (v1beta é mais seguro para features experimentais)
+# Cliente Principal
 client = genai.Client(api_key=api_key, http_options={"api_version": "v1beta"})
 
 # --- FUNÇÕES ---
@@ -103,26 +110,38 @@ def extract_text_from_file(uploaded_file):
         return None
     return text
 
-def create_super_prompt(resume_text, style_name):
+def create_super_prompt(resume_text, style_name, idioma, densidade):
+    # Lógica de Densidade para o Prompt
+    instrucao_densidade = ""
+    if densidade == "Conciso":
+        instrucao_densidade = "Use MINIMAL TEXT. Focus heavily on icons, large headlines, and visual flow. Only key keywords. Do not use full sentences."
+    elif densidade == "Detalhado (BETA)":
+        instrucao_densidade = "Use HIGH TEXT DENSITY. Include detailed descriptions, full sentences where possible, and comprehensive lists. (WARNING: Ensure text remains legible)."
+    else: # Padrão
+        instrucao_densidade = "Use BALANCED TEXT and VISUALS. Use bullet points for achievements. Mix short descriptions with clear icons."
+
     prompt = f"""
     ROLE: You are a World-Class Art Director and Data Visualization Expert using Gemini Image Generation.
     TASK: Convert the resume below into a highly detailed, text-rich IMAGE GENERATION PROMPT.
     
     TARGET STYLE: {style_name}
+    TARGET LANGUAGE FOR IMAGE TEXT: {idioma}
+    INFORMATION DENSITY: {densidade}
     
     INSTRUCTIONS FOR THE PROMPT YOU WILL WRITE:
-    1.  The output must be a single, long, descriptive prompt.
+    1.  The output must be a single, long, descriptive prompt in English (but commanding the text inside the image to be in {idioma}).
     2.  Demand a "Text-Rich Infographic Layout".
-    3.  Explicitly ask to render the Candidate's Name as the Main Title.
-    4.  Ask for a "Chronological Path" or "Timeline" visual structure.
-    5.  Specify visual icons for skills (e.g., cloud for AWS, gears for DevOps).
-    6.  Force the chosen style ({style_name}).
-    7.  Demand "High fidelity text rendering", "Legible fonts".
+    3.  **CRITICAL:** Explicitly instruction the model to render ALL visible text in {idioma}.
+    4.  **DENSITY CONTROL:** {instrucao_densidade}
+    5.  Explicitly ask to render the Candidate's Name as the Main Title.
+    6.  Ask for a "Chronological Path" or "Timeline" visual structure.
+    7.  Force the chosen style ({style_name}).
+    8.  Demand "High fidelity text rendering", "Legible fonts".
     
     RESUME DATA:
     {resume_text[:8000]}
     
-    OUTPUT: A raw prompt text. Start with: "A high-resolution, text-rich infographic poster in {style_name} style..."
+    OUTPUT: A raw prompt text. Start with: "A high-resolution, text-rich infographic poster in {style_name} style, text in {idioma}..."
     """
     try:
         response = client.models.generate_content(
@@ -135,13 +154,6 @@ def create_super_prompt(resume_text, style_name):
         return None
 
 def generate_image(prompt_visual, aspect_ratio):
-    """
-    Gera imagem usando o método nativo do Gemini (generate_content)
-    em vez do método Imagen (generate_images).
-    Isso ativa o modo 'Nano Banana'.
-    """
-    
-    # Mapeamento de Aspect Ratio para o formato Gemini
     ar = "1:1"
     if "16:9" in aspect_ratio: ar = "16:9"
     elif "9:16" in aspect_ratio: ar = "9:16"
@@ -158,40 +170,25 @@ def generate_image(prompt_visual, aspect_ratio):
                 )
             )
         )
-        
-        # O Gemini retorna a imagem como 'inline_data' dentro das partes
         for part in response.parts:
             if part.inline_data:
-                return part.inline_data.data # Retorna os bytes crus da imagem
-                
+                return part.inline_data.data
         return None
 
     except Exception as e:
         st.error(f"Erro no Motor Nano Banana ({MODELO_IMAGEM_FIXO}): {e}")
-        # Fallback de segurança: Tentar Imagen 2 se o Gemini 3 falhar
-        try:
-             # Fallback silencioso
-             response = client.models.generate_images(
-                model='imagen-2.0-generate-001',
-                prompt=prompt_visual,
-                config={'aspect_ratio': ar}
-            )
-             return response.generated_images[0].image.image_bytes
-        except:
-             return None
+        return None
 
 # --- INTERFACE PRINCIPAL ---
 st.title("HELIOS // RESUME INFOGRAPHIC")
 
-# --- INSTRUÇÕES ---
 st.markdown(f"""
 <div class="instruction-box">
     <strong>📘 MANUAL DE OPERAÇÃO:</strong>
     <ul>
-        <li><strong>Resultado:</strong> Infográfico visual de alta densidade resumindo a carreira.</li>
         <li><strong>Motor Ativo:</strong> <code>{MODELO_IMAGEM_FIXO}</code> (Nano Banana Pro).</li>
-        <li><strong>Processo:</strong> Suba o arquivo -> Configure Estilo -> Clique em GERAR.</li>
-        <li><strong>Nota:</strong> Textos pequenos podem conter imprecisões ("alucinações").</li>
+        <li><strong>Processo:</strong> Suba o arquivo -> Escolha Idioma/Densidade -> Clique em GERAR.</li>
+        <li><strong>Nota:</strong> O modo "Detalhado" pode gerar erros de texto (alucinações de caracteres). Use com cautela.</li>
     </ul>
 </div>
 """, unsafe_allow_html=True)
@@ -209,10 +206,17 @@ with col1:
     estilo_selecionado = st.selectbox("ESTILO VISUAL", list(ESTILOS.keys()), key=f"st_{reset_k}")
     formato_selecionado = st.selectbox("FORMATO", ["1:1 (Quadrado)", "16:9 (Paisagem)", "9:16 (Stories)"], key=f"fmt_{reset_k}")
     
-    # Seletor removido conforme solicitado. O motor agora é fixo e invisível.
+    st.subheader(">> 3. CONTEÚDO")
+    # Novos seletores de Idioma e Densidade
+    idioma_selecionado = st.selectbox("IDIOMA DO INFOGRÁFICO", ["Português (Brasil)", "Inglês", "Espanhol", "Francês"], key=f"lang_{reset_k}")
+    
+    densidade_selecionada = st.selectbox("DENSIDADE DE INFORMAÇÃO", ["Conciso", "Padrão", "Detalhado (BETA)"], index=1, key=f"dens_{reset_k}")
+    
+    if "Detalhado" in densidade_selecionada:
+        st.markdown("<p class='beta-warning'>⚠️ AVISO: Alta densidade aumenta o risco de erros de escrita na imagem.</p>", unsafe_allow_html=True)
 
 with col2:
-    st.subheader(">> 3. RENDERIZAÇÃO")
+    st.subheader(">> 4. RENDERIZAÇÃO")
     image_placeholder = st.empty()
     
     if st.session_state.last_image_bytes:
@@ -232,18 +236,15 @@ with col2:
                 texto_cv = extract_text_from_file(uploaded_file)
             
             if texto_cv:
-                with st.spinner(">> 2/3 DIREÇÃO DE ARTE (GEMINI)..."):
-                    prompt_otimizado = create_super_prompt(texto_cv, estilo_selecionado)
+                with st.spinner(f">> 2/3 DIREÇÃO DE ARTE ({idioma_selecionado.upper()})..."):
+                    # Passamos os novos parâmetros para o criador de prompts
+                    prompt_otimizado = create_super_prompt(texto_cv, estilo_selecionado, idioma_selecionado, densidade_selecionada)
                 
                 if prompt_otimizado:
                     with st.spinner(f">> 3/3 RENDERIZANDO NANO BANANA..."):
                         prompt_final = f"{prompt_otimizado} Style Details: {ESTILOS[estilo_selecionado]}"
                         
-                        # Retorna bytes crus agora
-                        img_bytes_raw = generate_image(
-                            prompt_final, 
-                            formato_selecionado
-                        )
+                        img_bytes_raw = generate_image(prompt_final, formato_selecionado)
                         
                         if img_bytes_raw:
                             st.session_state.last_image_bytes = img_bytes_raw
