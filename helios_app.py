@@ -43,6 +43,14 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# --- SISTEMA DE RESET (SESSION STATE) ---
+if 'gen_key' not in st.session_state:
+    st.session_state.gen_key = 0
+
+def reset_app():
+    """Incrementa o contador para forçar o recriamento dos widgets"""
+    st.session_state.gen_key += 1
+
 # --- BASE DE ESTILOS ---
 ESTILOS = {
     "ANIME BATTLE AESTHETIC": "High-Octane Anime Battle aesthetic illustration. A blend of intense action manga frames and vibrant, modern anime coloring. Settings should feature dramatic energy effects (speed lines, power auras, impact flashes), sharp angles, and highly expressive, dynamic character designs. Colors are intense and saturated (electric blues, fiery reds, deep purples). Apply effects like 'impact frames' or sudden shifts in color palette to emphasize key points. The atmosphere is intense, passionate, and empowering.",
@@ -68,32 +76,21 @@ if not api_key:
     st.stop()
 
 # --- FETCH DINÂMICO DE MODELOS ---
-# Esta função roda assim que a chave existe para popular o combo
 @st.cache_data(show_spinner=False)
 def get_available_models(key):
     try:
-        # Usa v1beta para ter mais chances de achar o Imagen 3
         temp_client = genai.Client(api_key=key, http_options={"api_version": "v1beta"})
-        
-        # O comando real que lista tudo
         all_models = temp_client.models.list()
-        
-        # Filtra apenas o que é IMAGEN
         imagen_models = []
         for m in all_models:
             if "imagen" in m.name.lower():
-                # Limpa o prefixo 'models/' se vier, para ficar mais limpo
                 clean_name = m.name.replace("models/", "")
                 imagen_models.append(clean_name)
-        
         return imagen_models
     except Exception as e:
-        return [f"ERRO AO LISTAR: {str(e)}"]
+        return [f"ERRO: {str(e)}"]
 
-# Chama a função de busca
 available_imagen_models = get_available_models(api_key)
-
-# Cliente Principal
 client = genai.Client(api_key=api_key, http_options={"api_version": "v1beta"})
 
 # --- FUNÇÕES ---
@@ -169,31 +166,34 @@ st.markdown("---")
 
 col1, col2 = st.columns([1, 1])
 
+# Usamos a chave dinâmica nos widgets para permitir o reset
+current_key = st.session_state.gen_key
+
 with col1:
     st.subheader(">> 1. UPLOAD DO CURRÍCULO")
-    uploaded_file = st.file_uploader("ARQUIVO", type=["pdf", "docx", "txt"])
+    uploaded_file = st.file_uploader("ARQUIVO", type=["pdf", "docx", "txt"], key=f"uploader_{current_key}")
 
     st.subheader(">> 2. CONFIGURAÇÃO VISUAL")
     
     # 1. Estilo
-    estilo_selecionado = st.selectbox("ESTILO VISUAL", list(ESTILOS.keys()))
+    estilo_selecionado = st.selectbox("ESTILO VISUAL", list(ESTILOS.keys()), key=f"style_{current_key}")
     st.markdown(f"<div class='style-desc'>{ESTILOS[estilo_selecionado]}</div>", unsafe_allow_html=True)
     
     # 2. Formato
-    formato_selecionado = st.selectbox("FORMATO", ["1:1 (Quadrado)", "16:9 (Paisagem)", "9:16 (Stories)"])
+    formato_selecionado = st.selectbox("FORMATO", ["1:1 (Quadrado)", "16:9 (Paisagem)", "9:16 (Stories)"], key=f"fmt_{current_key}")
     
     # 3. Modelo (Dinâmico)
-    st.subheader(">> 3. SELEÇÃO DO MOTOR (REAL-TIME)")
+    st.subheader(">> 3. SELEÇÃO DO MOTOR")
     
     if available_imagen_models and "ERRO" not in available_imagen_models[0]:
         modelo_selecionado = st.selectbox(
             "MODELOS DISPONÍVEIS NA SUA CONTA:", 
-            available_imagen_models
+            available_imagen_models,
+            key=f"model_{current_key}"
         )
     else:
-        # Fallback caso a lista venha vazia ou com erro
-        st.warning(f"⚠️ Não foi possível listar modelos automaticamente: {available_imagen_models}")
-        modelo_selecionado = st.text_input("Digite o nome do modelo manualmente:", "imagen-3.0-generate-001")
+        st.warning(f"⚠️ Não foi possível listar modelos automaticamente.")
+        modelo_selecionado = st.text_input("Digite o nome do modelo:", "imagen-3.0-generate-001", key=f"model_txt_{current_key}")
 
 with col2:
     st.subheader(">> 4. GERAÇÃO")
@@ -201,7 +201,7 @@ with col2:
     
     pode_gerar = uploaded_file is not None and estilo_selecionado and formato_selecionado and modelo_selecionado
     
-    if st.button("GERAR INFOGRÁFICO [RENDER]", type="primary", disabled=not pode_gerar):
+    if st.button("GERAR INFOGRÁFICO [RENDER]", type="primary", disabled=not pode_gerar, key=f"btn_go_{current_key}"):
         if uploaded_file:
             with st.spinner(">> 1/3 LENDO DADOS..."):
                 texto_cv = extract_text_from_file(uploaded_file)
@@ -228,6 +228,11 @@ with col2:
                             image.save(buf, format="PNG")
                             st.download_button("⬇️ BAIXAR (PNG)", data=buf.getvalue(), file_name="helios_resume.png", mime="image/png")
                             st.success("SUCESSO.")
-    
+                            
+                            # --- BOTÃO DE RESET DENTRO DA ÁREA DE SUCESSO ---
+                            st.markdown("---")
+                            if st.button("✨ NOVA GERAÇÃO (LIMPAR TUDO)", on_click=reset_app):
+                                pass # O callback reset_app já faz o trabalho de limpar
+
     if not pode_gerar:
         st.info("Preencha todos os campos para habilitar a geração.")
