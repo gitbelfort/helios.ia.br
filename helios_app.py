@@ -22,14 +22,17 @@ st.markdown("""
     .stTextInput, .stSelectbox, .stFileUploader { color: #FFD700; }
     .stSelectbox > div > div { background-color: #111; color: #FFD700; border: 1px solid #FFD700; }
     
+    /* Botões */
     .stButton > button { 
         background-color: #000000; color: #FFD700; border: 2px solid #FFD700; 
         border-radius: 0px; text-transform: uppercase; transition: 0.3s; width: 100%; font-weight: bold; font-size: 1.1em;
     }
     .stButton > button:hover { background-color: #FFD700; color: #000000; box-shadow: 0 0 20px #FFD700; }
     
+    /* Upload */
     [data-testid='stFileUploader'] { border: 1px dashed #FFD700; padding: 20px; background-color: #050505; }
     
+    /* Caixa de Análise */
     .analysis-box {
         border: 1px solid #333;
         background-color: #111;
@@ -43,6 +46,15 @@ st.markdown("""
         color: #00FF00 !important;
         font-weight: bold;
         margin-bottom: 5px;
+    }
+    
+    /* Caixa de Instrução */
+    .instruction-box {
+        border: 1px solid #FFD700;
+        background-color: #0a0a0a;
+        padding: 15px;
+        margin-bottom: 25px;
+        border-left: 8px solid #FFD700;
     }
     
     .token-box {
@@ -66,20 +78,16 @@ st.markdown("""
 MODELO_IMAGEM_FIXO = "gemini-3-pro-image-preview"
 
 # --- ESTADO ---
-if 'last_image_bytes' not in st.session_state:
-    st.session_state.last_image_bytes = None
-if 'last_token_usage' not in st.session_state:
-    st.session_state.last_token_usage = None
-if 'reset_trigger' not in st.session_state:
-    st.session_state.reset_trigger = 0
-if 'analyzed_content' not in st.session_state:
-    st.session_state.analyzed_content = None
-if 'ready_prompt' not in st.session_state:
-    st.session_state.ready_prompt = None
-if 'last_uploaded_file_id' not in st.session_state:
-    st.session_state.last_uploaded_file_id = None
+keys_to_init = [
+    'last_image_bytes', 'last_token_usage', 'reset_trigger', 
+    'analyzed_content', 'ready_prompt', 'last_uploaded_file_id'
+]
+for key in keys_to_init:
+    if key not in st.session_state:
+        st.session_state[key] = None if key != 'reset_trigger' else 0
 
 def reset_all():
+    """Reseta a sessão inteira para estado inicial"""
     st.session_state.last_image_bytes = None
     st.session_state.last_token_usage = None
     st.session_state.analyzed_content = None
@@ -99,15 +107,12 @@ ESTILOS = {
     "HYPERBOLD TYPOGRAPHY": "Hyperbold High-Contrast Aesthetic. Massive, heavy typography and brutalist geometric shapes. Strict Black & White palette with one neon accent. Urgent, impactful."
 }
 
-# --- AUTH ---
+# --- AUTH (SIDEBAR MINIMALISTA) ---
 with st.sidebar:
     st.title("🟡 HELIOS")
     st.markdown("**UNIVERSAL INFOGRAPHIC**")
     api_key = st.text_input("CHAVE DE ACESSO (API KEY)", type="password")
     st.markdown("---")
-    if st.button("♻️ LIMPAR TUDO"):
-        reset_all()
-        st.rerun()
     st.info("SISTEMA ONLINE\nDOMÍNIO: HELIOS.IA.BR")
 
 if not api_key:
@@ -119,13 +124,7 @@ client = genai.Client(api_key=api_key, http_options={"api_version": "v1beta"})
 # --- FUNÇÕES ---
 
 def process_uploaded_file(uploaded_file):
-    """
-    CORREÇÃO APLICADA AQUI:
-    Em vez de usar 'from_bytes' (que deu erro), usamos o construtor direto 'types.Part(inline_data=...)'.
-    Isso é o método mais seguro e compatível com todas as versões.
-    """
     try:
-        # IMAGEM (Correção Crítica)
         if uploaded_file.type in ["image/png", "image/jpeg", "image/jpg", "image/webp"]:
             return types.Part(
                 inline_data=types.Blob(
@@ -134,7 +133,6 @@ def process_uploaded_file(uploaded_file):
                 )
             )
         
-        # TEXTO
         text_content = ""
         if uploaded_file.type == "application/pdf":
             reader = pypdf.PdfReader(uploaded_file)
@@ -148,7 +146,6 @@ def process_uploaded_file(uploaded_file):
             text_content = uploaded_file.read().decode("utf-8")
             
         return types.Part.from_text(text=text_content[:20000]) 
-
     except Exception as e:
         st.error(f"Erro ao processar arquivo: {e}")
         return None
@@ -188,16 +185,9 @@ def analyze_and_create_prompt(content_part, style_name, idioma, densidade):
     try:
         response = client.models.generate_content(
             model="gemini-2.0-flash-exp",
-            contents=[
-                types.Part.from_text(text=prompt_text),
-                content_part
-            ]
+            contents=[types.Part.from_text(text=prompt_text), content_part]
         )
-        
         result_text = response.text
-        
-        summary = "Análise concluída."
-        prompt = ""
         
         if "USER_SUMMARY:" in result_text and "PROMPT:" in result_text:
             parts = result_text.split("PROMPT:")
@@ -205,8 +195,7 @@ def analyze_and_create_prompt(content_part, style_name, idioma, densidade):
             prompt_part = parts[1].strip()
             return summary_part, prompt_part, response.usage_metadata
         else:
-            return "Conteúdo identificado. Pronto para gerar.", result_text, response.usage_metadata
-        
+            return "Conteúdo identificado.", result_text, response.usage_metadata
     except Exception as e:
         st.error(f"Erro na análise inteligente: {e}")
         return None, None, None
@@ -245,11 +234,12 @@ def show_full_image(image_bytes, token_info):
     col_dl, col_tok = st.columns([1, 1])
     with col_dl:
         st.download_button(
-            label=f"⬇️ BAIXAR ({filename})",
+            label=f"⬇️ BAIXAR ARQUIVO",
             data=image_bytes,
             file_name=filename,
             mime="image/png",
-            type="primary"
+            type="primary",
+            use_container_width=True
         )
     with col_tok:
         if token_info:
@@ -257,8 +247,21 @@ def show_full_image(image_bytes, token_info):
             info_text = f"Input: {u.prompt_token_count} | Output: {u.candidates_token_count}"
             st.markdown(f"<div class='token-box'>💎 CUSTO DE ANÁLISE:<br>{info_text}</div>", unsafe_allow_html=True)
 
-# --- UI ---
-st.title("HELIOS // UNIVERSAL INFOGRAPHIC")
+# --- UI PRINCIPAL ---
+st.title("HELIOS // UNIVERSAL INFOGRAPHIC v2.7")
+
+# Instruções Restauradas no Topo
+st.markdown(f"""
+<div class="instruction-box">
+    <strong>📘 MANUAL DE OPERAÇÃO UNIVERSAL:</strong>
+    <ul>
+        <li><strong>1. Input Universal:</strong> Arraste Currículos (PDF/DOC) ou Fotos (JPG/PNG). O sistema entende o que é.</li>
+        <li><strong>2. Análise Automática:</strong> O cérebro da IA identifica o assunto (Ex: Comida -> Receita; Objeto -> Specs).</li>
+        <li><strong>3. Configuração:</strong> Ajuste o Estilo Visual, Idioma do texto e Densidade de informação.</li>
+        <li><strong>4. Renderização:</strong> Clique em GERAR para criar o infográfico final em alta resolução.</li>
+    </ul>
+</div>
+""", unsafe_allow_html=True)
 
 col1, col2 = st.columns([1, 1])
 reset_k = st.session_state.reset_trigger
@@ -271,23 +274,19 @@ with col1:
         key=f"up_{reset_k}"
     )
 
-    # --- LÓGICA DE ANÁLISE ---
+    # Lógica de Análise (Mantida)
     if uploaded_file:
         current_file_id = uploaded_file.file_id if hasattr(uploaded_file, 'file_id') else uploaded_file.name
-        
         if current_file_id != st.session_state.last_uploaded_file_id:
             st.session_state.analyzed_content = None
             st.session_state.ready_prompt = None
             st.session_state.last_image_bytes = None
             
-            with st.spinner("🧠 CÉREBRO GEMINI: ANALISANDO..."):
+            with st.spinner("🧠 CÉREBRO GEMINI: ANALISANDO CONTEÚDO..."):
                 content_part = process_uploaded_file(uploaded_file)
                 if content_part:
                     summary, prompt, tokens = analyze_and_create_prompt(
-                        content_part, 
-                        "HYPERBOLD TYPOGRAPHY", 
-                        "Português (Brasil)", 
-                        "Padrão"
+                        content_part, "HYPERBOLD TYPOGRAPHY", "Português (Brasil)", "Padrão"
                     )
                     st.session_state.analyzed_content = summary
                     st.session_state.ready_prompt = prompt
@@ -310,6 +309,12 @@ with col1:
     idioma_selecionado = st.selectbox("IDIOMA", ["Português (Brasil)", "Inglês", "Espanhol", "Francês"], key=f"lang_{reset_k}")
     densidade_selecionada = st.selectbox("DENSIDADE", ["Conciso", "Padrão", "Detalhado (BETA)"], index=1, key=f"dens_{reset_k}")
 
+    # BOTÃO LIMPAR (MOVIDO PARA CÁ)
+    st.markdown("---")
+    if st.button("♻️ LIMPAR TUDO / REINICIAR", use_container_width=True, key=f"clr_{reset_k}"):
+        reset_all()
+        st.rerun()
+
 with col2:
     st.subheader(">> 4. RESULTADO")
     preview_placeholder = st.empty()
@@ -318,7 +323,8 @@ with col2:
         img_preview = Image.open(io.BytesIO(st.session_state.last_image_bytes))
         preview_placeholder.image(img_preview, caption="PREVIEW", width=400)
         
-        if st.button("🔍 AMPLIAR / DOWNLOAD", type="secondary", key=f"modal_btn_{reset_k}"):
+        # Botão de Ação (Zoom/Download) que funciona como clique na imagem
+        if st.button("🔍 CLIQUE AQUI PARA AMPLIAR / BAIXAR", type="secondary", use_container_width=True, key=f"zoom_{reset_k}"):
             show_full_image(st.session_state.last_image_bytes, st.session_state.last_token_usage)
 
     pode_gerar = st.session_state.analyzed_content is not None
@@ -327,7 +333,10 @@ with col2:
     if st.session_state.last_image_bytes:
         label_btn = "♻️ RE-GERAR (SUBSTITUIR ATUAL)"
     
-    if st.button(label_btn, type="primary", disabled=not pode_gerar, key=f"btn_gen_{reset_k}"):
+    # Adicionei espaçamento para separar do preview
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    if st.button(label_btn, type="primary", disabled=not pode_gerar, key=f"btn_gen_{reset_k}", use_container_width=True):
         with st.spinner(">> ATUALIZANDO ROTEIRO E RENDERIZANDO..."):
             content_part = process_uploaded_file(uploaded_file)
             _, prompt_final_tecnico, _ = analyze_and_create_prompt(
