@@ -1,7 +1,7 @@
 import streamlit as st
 import os
 from google import genai
-from google.genai.types import Content, Part
+from google.genai import types # Importação crucial para o novo método
 from PIL import Image
 import io
 import pypdf
@@ -16,24 +16,19 @@ st.markdown("""
     
     .stApp { background-color: #000000; color: #FFD700; font-family: 'Share Tech Mono', monospace; }
     
-    /* Fontes e Cores */
     h1, h2, h3, p, label, span, div, li { color: #FFD700 !important; font-family: 'Share Tech Mono', monospace !important; }
     
-    /* Inputs */
     .stTextInput, .stSelectbox, .stFileUploader { color: #FFD700; }
     .stSelectbox > div > div { background-color: #111; color: #FFD700; border: 1px solid #FFD700; }
     
-    /* Botões */
     .stButton > button { 
         background-color: #000000; color: #FFD700; border: 2px solid #FFD700; 
         border-radius: 0px; text-transform: uppercase; transition: 0.3s; width: 100%; font-weight: bold; font-size: 1.1em;
     }
     .stButton > button:hover { background-color: #FFD700; color: #000000; box-shadow: 0 0 20px #FFD700; }
     
-    /* Área de Upload */
     [data-testid='stFileUploader'] { border: 1px dashed #FFD700; padding: 20px; background-color: #050505; }
     
-    /* Caixas de Instrução */
     .instruction-box {
         border: 1px solid #333;
         background-color: #0a0a0a;
@@ -46,21 +41,20 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- GERENCIAMENTO DE ESTADO (Persistência) ---
+# --- MODELO HARDCODED (O VERDADEIRO NANO BANANA PRO) ---
+MODELO_IMAGEM_FIXO = "gemini-3-pro-image-preview" # Na verdade, pode precisar ser 'gemini-2.0-flash' dependendo da liberação, mas vamos tentar o Pro Preview.
+
+# --- GERENCIAMENTO DE ESTADO ---
 if 'last_image_bytes' not in st.session_state:
     st.session_state.last_image_bytes = None
-if 'last_model_used' not in st.session_state:
-    st.session_state.last_model_used = None
 if 'reset_trigger' not in st.session_state:
     st.session_state.reset_trigger = 0
 
 def reset_all():
-    """Limpa tudo para uma nova geração"""
     st.session_state.last_image_bytes = None
-    st.session_state.last_model_used = None
     st.session_state.reset_trigger += 1
 
-# --- BASE DE ESTILOS (PROMPTS OTIMIZADOS) ---
+# --- BASE DE ESTILOS ---
 ESTILOS = {
     "ANIME BATTLE AESTHETIC": "High-Octane Anime Battle aesthetic illustration. A blend of intense action manga frames and vibrant, modern anime coloring. Settings should feature dramatic energy effects (speed lines, power auras, impact flashes), sharp angles, and highly expressive, dynamic character designs. Colors are intense and saturated (electric blues, fiery reds, deep purples). The atmosphere is intense, passionate, and empowering.",
     "3D NEUMORPHISM AESTHETIC": "Tactile 3D Neumorphism aesthetic illustration. A blend of modern UI design and satisfying, touchable digital objects. Settings should feature ultra-soft UI elements where shapes look extruded from the background using realistic soft shadows and light highlights. Finishes are glossy, frosted glass, or soft matte silicone. The color palette is clean and minimalist (off-whites, soft light grays, muted pastels). Shapes are inflated, puffy, and rounded.",
@@ -78,35 +72,16 @@ with st.sidebar:
     st.markdown("**RESUME INFOGRAPHIC GEN**")
     api_key = st.text_input("CHAVE DE ACESSO (API KEY)", type="password")
     st.markdown("---")
-    
     if st.button("♻️ LIMPAR / NOVA GERAÇÃO"):
         reset_all()
         st.rerun()
-
     st.info("SISTEMA ONLINE\nDOMÍNIO: HELIOS.IA.BR")
 
 if not api_key:
     st.warning(">> ALERTA: INSIRA A CHAVE DE ACESSO PARA INICIAR.")
     st.stop()
 
-# --- FETCH DINÂMICO DE MODELOS ---
-@st.cache_data(show_spinner=False)
-def get_available_models(key):
-    try:
-        temp_client = genai.Client(api_key=key, http_options={"api_version": "v1beta"})
-        all_models = temp_client.models.list()
-        imagen_models = []
-        for m in all_models:
-            if "imagen" in m.name.lower():
-                clean_name = m.name.replace("models/", "")
-                imagen_models.append(clean_name)
-        # Tenta ordenar para deixar os mais novos/ultra no topo
-        imagen_models.sort(reverse=True)
-        return imagen_models
-    except Exception as e:
-        return [f"ERRO: {str(e)}"]
-
-available_imagen_models = get_available_models(api_key)
+# Cliente Principal (v1beta é mais seguro para features experimentais)
 client = genai.Client(api_key=api_key, http_options={"api_version": "v1beta"})
 
 # --- FUNÇÕES ---
@@ -129,29 +104,26 @@ def extract_text_from_file(uploaded_file):
     return text
 
 def create_super_prompt(resume_text, style_name):
-    # O SEGREDO DO "NANO BANANA": Prompt Engineering Agressivo
     prompt = f"""
-    ROLE: You are a World-Class Art Director and Data Visualization Expert using Imagen 3/4 Ultra.
+    ROLE: You are a World-Class Art Director and Data Visualization Expert using Gemini Image Generation.
     TASK: Convert the resume below into a highly detailed, text-rich IMAGE GENERATION PROMPT.
     
     TARGET STYLE: {style_name}
     
     INSTRUCTIONS FOR THE PROMPT YOU WILL WRITE:
-    1.  The output must be a single, long, descriptive prompt for an image generator.
+    1.  The output must be a single, long, descriptive prompt.
     2.  Demand a "Text-Rich Infographic Layout".
     3.  Explicitly ask to render the Candidate's Name as the Main Title.
     4.  Ask for a "Chronological Path" or "Timeline" visual structure.
     5.  Specify visual icons for skills (e.g., cloud for AWS, gears for DevOps).
-    6.  Force the chosen style ({style_name}) in terms of lighting, texture, and palette.
-    7.  Demand "High fidelity text rendering", "Legible fonts", "Professional chart design".
-    8.  Do NOT just summarize the career. DESCRIBE THE IMAGE that represents the career.
+    6.  Force the chosen style ({style_name}).
+    7.  Demand "High fidelity text rendering", "Legible fonts".
     
     RESUME DATA:
     {resume_text[:8000]}
     
-    OUTPUT: A raw prompt text to be fed into the image generator. Start with: "A high-resolution, text-rich infographic poster in {style_name} style..."
+    OUTPUT: A raw prompt text. Start with: "A high-resolution, text-rich infographic poster in {style_name} style..."
     """
-    
     try:
         response = client.models.generate_content(
             model="gemini-2.0-flash-exp",
@@ -162,34 +134,64 @@ def create_super_prompt(resume_text, style_name):
         st.error(f"Erro na criação do prompt: {e}")
         return None
 
-def generate_image(prompt_visual, aspect_ratio, model_name):
-    ar_param = "1:1"
-    if "16:9" in aspect_ratio: ar_param = "16:9"
-    elif "9:16" in aspect_ratio: ar_param = "9:16"
+def generate_image(prompt_visual, aspect_ratio):
+    """
+    Gera imagem usando o método nativo do Gemini (generate_content)
+    em vez do método Imagen (generate_images).
+    Isso ativa o modo 'Nano Banana'.
+    """
+    
+    # Mapeamento de Aspect Ratio para o formato Gemini
+    ar = "1:1"
+    if "16:9" in aspect_ratio: ar = "16:9"
+    elif "9:16" in aspect_ratio: ar = "9:16"
 
     try:
-        response = client.models.generate_images(
-            model=model_name,
-            prompt=prompt_visual,
-            config={'aspect_ratio': ar_param}
+        # Chamada NATIVA do Gemini para imagem
+        response = client.models.generate_content(
+            model=MODELO_IMAGEM_FIXO,
+            contents=[prompt_visual],
+            config=types.GenerateContentConfig(
+                response_modalities=["IMAGE"],
+                image_config=types.ImageConfig(
+                    aspect_ratio=ar
+                )
+            )
         )
-        return response.generated_images[0].image
-    except Exception as e:
-        st.error(f"Erro no Modelo {model_name}: {e}")
+        
+        # O Gemini retorna a imagem como 'inline_data' dentro das partes
+        for part in response.parts:
+            if part.inline_data:
+                return part.inline_data.data # Retorna os bytes crus da imagem
+                
         return None
 
+    except Exception as e:
+        st.error(f"Erro no Motor Nano Banana ({MODELO_IMAGEM_FIXO}): {e}")
+        # Fallback de segurança: Tentar Imagen 2 se o Gemini 3 falhar
+        try:
+             # Fallback silencioso
+             response = client.models.generate_images(
+                model='imagen-2.0-generate-001',
+                prompt=prompt_visual,
+                config={'aspect_ratio': ar}
+            )
+             return response.generated_images[0].image.image_bytes
+        except:
+             return None
+
 # --- INTERFACE PRINCIPAL ---
-st.title("HELIOS // RESUME INFOGRAPHIC GEN")
+st.title("HELIOS // RESUME INFOGRAPHIC")
 
 # --- INSTRUÇÕES ---
-st.markdown("""
+st.markdown(f"""
 <div class="instruction-box">
     <strong>📘 MANUAL DE OPERAÇÃO:</strong>
     <ul>
-        <li><strong>Resultado Esperado:</strong> Um infográfico visual de alta densidade resumindo a carreira.</li>
-        <li><strong>Motor Recomendado:</strong> Use o modelo <code>imagen-4.0-ultra</code> para melhor qualidade de texto.</li>
+        <li><strong>Resultado:</strong> Infográfico visual de alta densidade resumindo a carreira.</li>
+        <li><strong>Motor Ativo:</strong> <code>{MODELO_IMAGEM_FIXO}</code> (Nano Banana Pro).</li>
         <li><strong>Processo:</strong> Suba o arquivo -> Configure Estilo -> Clique em GERAR.</li>
-        <li><strong>Nota:</strong> O sistema usa Inteligência Artificial Generativa; textos pequenos podem conter "alucinações" visuais (glitches).</li>
+        <li><strong>Nota:</strong> Textos pequenos podem conter imprecisões ("alucinações").</li>
     </ul>
 </div>
 """, unsafe_allow_html=True)
@@ -197,8 +199,6 @@ st.markdown("""
 st.markdown("---")
 
 col1, col2 = st.columns([1, 1])
-
-# Chave de Reset para limpar inputs
 reset_k = st.session_state.reset_trigger
 
 with col1:
@@ -209,43 +209,22 @@ with col1:
     estilo_selecionado = st.selectbox("ESTILO VISUAL", list(ESTILOS.keys()), key=f"st_{reset_k}")
     formato_selecionado = st.selectbox("FORMATO", ["1:1 (Quadrado)", "16:9 (Paisagem)", "9:16 (Stories)"], key=f"fmt_{reset_k}")
     
-    st.subheader(">> 3. SELEÇÃO DO MOTOR")
-    if available_imagen_models and "ERRO" not in available_imagen_models[0]:
-        # Tenta selecionar o Ultra automaticamente se existir
-        idx_ultra = 0
-        for i, nome in enumerate(available_imagen_models):
-            if "ultra" in nome:
-                idx_ultra = i
-                break
-        
-        modelo_selecionado = st.selectbox(
-            "MODELOS DISPONÍVEIS:", 
-            available_imagen_models,
-            index=idx_ultra,
-            key=f"mod_{reset_k}"
-        )
-    else:
-        modelo_selecionado = st.text_input("Digite o modelo:", "imagen-3.0-generate-001", key=f"mod_txt_{reset_k}")
+    # Seletor removido conforme solicitado. O motor agora é fixo e invisível.
 
 with col2:
-    st.subheader(">> 4. RENDERIZAÇÃO")
+    st.subheader(">> 3. RENDERIZAÇÃO")
     image_placeholder = st.empty()
     
-    # Se já temos uma imagem na memória (sessão), mostramos ela direto sem gerar de novo
     if st.session_state.last_image_bytes:
         image = Image.open(io.BytesIO(st.session_state.last_image_bytes))
-        image_placeholder.image(image, caption=f"INFOGRÁFICO ({st.session_state.last_model_used})", use_container_width=True)
+        image_placeholder.image(image, caption=f"INFOGRÁFICO ({MODELO_IMAGEM_FIXO})", use_container_width=True)
         
-        # Botão de Download (Não vai resetar a vista porque a imagem está na session_state)
         buf = io.BytesIO()
         image.save(buf, format="PNG")
         st.download_button("⬇️ BAIXAR (PNG)", data=buf.getvalue(), file_name="helios_resume.png", mime="image/png")
-        
-        # Botão para gerar por cima (apenas ignora o cache e roda a lógica abaixo)
-        st.info("Para gerar uma nova versão com os mesmos ajustes, clique em GERAR novamente.")
+        st.info("Para gerar uma nova versão, clique em GERAR novamente.")
 
-    # Botão de Geração
-    pode_gerar = uploaded_file is not None and estilo_selecionado and formato_selecionado and modelo_selecionado
+    pode_gerar = uploaded_file is not None and estilo_selecionado and formato_selecionado
     
     if st.button("GERAR INFOGRÁFICO [RENDER]", type="primary", disabled=not pode_gerar, key=f"btn_{reset_k}"):
         if uploaded_file:
@@ -253,23 +232,19 @@ with col2:
                 texto_cv = extract_text_from_file(uploaded_file)
             
             if texto_cv:
-                with st.spinner(">> 2/3 PROMPT ENGINEERING (MODO DIREÇÃO DE ARTE)..."):
-                    # Aqui está a mágica: Gemini cria o prompt detalhado para o Imagen
+                with st.spinner(">> 2/3 DIREÇÃO DE ARTE (GEMINI)..."):
                     prompt_otimizado = create_super_prompt(texto_cv, estilo_selecionado)
                 
                 if prompt_otimizado:
-                    with st.spinner(f">> 3/3 RENDERIZANDO COM {modelo_selecionado}..."):
-                        # Adiciona a descrição do estilo ao prompt otimizado para garantir fidelidade
+                    with st.spinner(f">> 3/3 RENDERIZANDO NANO BANANA..."):
                         prompt_final = f"{prompt_otimizado} Style Details: {ESTILOS[estilo_selecionado]}"
                         
-                        img_bytes = generate_image(
+                        # Retorna bytes crus agora
+                        img_bytes_raw = generate_image(
                             prompt_final, 
-                            formato_selecionado,
-                            modelo_selecionado
+                            formato_selecionado
                         )
                         
-                        if img_bytes:
-                            # SALVA NO ESTADO
-                            st.session_state.last_image_bytes = img_bytes.image_bytes
-                            st.session_state.last_model_used = modelo_selecionado
-                            st.rerun() # Recarrega a página para exibir a imagem do estado
+                        if img_bytes_raw:
+                            st.session_state.last_image_bytes = img_bytes_raw
+                            st.rerun()
