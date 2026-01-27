@@ -30,7 +30,6 @@ st.markdown("""
     
     [data-testid='stFileUploader'] { border: 1px dashed #FFD700; padding: 20px; background-color: #050505; }
     
-    /* Área de Descrição da Análise */
     .analysis-box {
         border: 1px solid #333;
         background-color: #111;
@@ -66,19 +65,17 @@ st.markdown("""
 # --- MODELO ---
 MODELO_IMAGEM_FIXO = "gemini-3-pro-image-preview"
 
-# --- GERENCIAMENTO DE ESTADO ---
+# --- ESTADO ---
 if 'last_image_bytes' not in st.session_state:
     st.session_state.last_image_bytes = None
 if 'last_token_usage' not in st.session_state:
     st.session_state.last_token_usage = None
 if 'reset_trigger' not in st.session_state:
     st.session_state.reset_trigger = 0
-
-# Estado para a Análise Prévia
 if 'analyzed_content' not in st.session_state:
-    st.session_state.analyzed_content = None # Texto descritivo para o usuário
+    st.session_state.analyzed_content = None
 if 'ready_prompt' not in st.session_state:
-    st.session_state.ready_prompt = None # Prompt técnico para o Nano Banana
+    st.session_state.ready_prompt = None
 if 'last_uploaded_file_id' not in st.session_state:
     st.session_state.last_uploaded_file_id = None
 
@@ -123,14 +120,19 @@ client = genai.Client(api_key=api_key, http_options={"api_version": "v1beta"})
 
 def process_uploaded_file(uploaded_file):
     """
-    Processa arquivos e retorna o objeto Part correto.
-    CORREÇÃO APLICADA: mime_type passado como keyword argument.
+    CORREÇÃO APLICADA AQUI:
+    Em vez de usar 'from_bytes' (que deu erro), usamos o construtor direto 'types.Part(inline_data=...)'.
+    Isso é o método mais seguro e compatível com todas as versões.
     """
     try:
-        # IMAGEM
+        # IMAGEM (Correção Crítica)
         if uploaded_file.type in ["image/png", "image/jpeg", "image/jpg", "image/webp"]:
-            # CORREÇÃO: mime_type=...
-            return types.Part.from_bytes(uploaded_file.getvalue(), mime_type=uploaded_file.type)
+            return types.Part(
+                inline_data=types.Blob(
+                    mime_type=uploaded_file.type,
+                    data=uploaded_file.getvalue()
+                )
+            )
         
         # TEXTO
         text_content = ""
@@ -152,12 +154,6 @@ def process_uploaded_file(uploaded_file):
         return None
 
 def analyze_and_create_prompt(content_part, style_name, idioma, densidade):
-    """
-    Função Dupla:
-    1. Gera uma Descrição para o Usuário (Resumo).
-    2. Gera o Prompt Técnico para o Nano Banana.
-    """
-    
     instrucao_densidade = ""
     if densidade == "Conciso":
         instrucao_densidade = "Use MINIMAL TEXT. Focus heavily on icons/headlines."
@@ -172,7 +168,7 @@ def analyze_and_create_prompt(content_part, style_name, idioma, densidade):
     
     SECTION 1: USER_SUMMARY
     - Write a short paragraph (in Portuguese) describing exactly what was identified in the file.
-    - Example: "Identifiquei uma foto de um prato de Feijoada com arroz, couve e laranja." or "Identifiquei o currículo de um Engenheiro de Software Sênior."
+    - Example: "Identifiquei uma foto de um prato de Feijoada..." or "Identifiquei o currículo de um Engenheiro..."
     
     SECTION 2: PROMPT
     - Write a highly detailed IMAGE GENERATION PROMPT for Gemini/Nano Banana based on the analysis.
@@ -200,7 +196,6 @@ def analyze_and_create_prompt(content_part, style_name, idioma, densidade):
         
         result_text = response.text
         
-        # Parser simples para separar o Resumo do Prompt
         summary = "Análise concluída."
         prompt = ""
         
@@ -210,7 +205,6 @@ def analyze_and_create_prompt(content_part, style_name, idioma, densidade):
             prompt_part = parts[1].strip()
             return summary_part, prompt_part, response.usage_metadata
         else:
-            # Fallback se a IA não formatar direito
             return "Conteúdo identificado. Pronto para gerar.", result_text, response.usage_metadata
         
     except Exception as e:
@@ -277,41 +271,29 @@ with col1:
         key=f"up_{reset_k}"
     )
 
-    # --- LÓGICA DE ANÁLISE IMEDIATA ---
+    # --- LÓGICA DE ANÁLISE ---
     if uploaded_file:
-        # Verifica se é um arquivo novo para não re-analisar a cada clique
         current_file_id = uploaded_file.file_id if hasattr(uploaded_file, 'file_id') else uploaded_file.name
         
         if current_file_id != st.session_state.last_uploaded_file_id:
-            # É um arquivo novo! Limpa resultados anteriores e analisa
             st.session_state.analyzed_content = None
             st.session_state.ready_prompt = None
-            st.session_state.last_image_bytes = None # Limpa imagem antiga
+            st.session_state.last_image_bytes = None
             
-            with st.spinner("🧠 CÉREBRO GEMINI: Lendo e Entendendo o arquivo..."):
-                # Captura parâmetros atuais do form para o primeiro prompt
-                # (O usuário pode mudar depois e re-analisar se quiser, mas pegamos o default)
-                # Nota: Para ser perfeito, teríamos que re-analisar se o usuário mudar o estilo.
-                # Mas para "descrever o conteúdo", o estilo não importa tanto.
-                # Vamos usar um default para a análise inicial.
-                
+            with st.spinner("🧠 CÉREBRO GEMINI: ANALISANDO..."):
                 content_part = process_uploaded_file(uploaded_file)
                 if content_part:
-                    # Analisa com os defaults atuais da UI (mesmo que ainda não renderizados)
-                    # Como estamos no mesmo script run, usamos defaults seguros
                     summary, prompt, tokens = analyze_and_create_prompt(
                         content_part, 
-                        "HYPERBOLD TYPOGRAPHY", # Default para análise
+                        "HYPERBOLD TYPOGRAPHY", 
                         "Português (Brasil)", 
                         "Padrão"
                     )
-                    
                     st.session_state.analyzed_content = summary
-                    st.session_state.ready_prompt = prompt # Prompt base
+                    st.session_state.ready_prompt = prompt
                     st.session_state.last_token_usage = tokens
                     st.session_state.last_uploaded_file_id = current_file_id
 
-        # Exibe a análise SE ela existir
         if st.session_state.analyzed_content:
             st.markdown(f"""
             <div class="analysis-box">
@@ -320,10 +302,7 @@ with col1:
             </div>
             """, unsafe_allow_html=True)
 
-
     st.subheader(">> 2. CONFIGURAÇÃO")
-    # Nota: Se o usuário mudar o estilo aqui, precisaremos atualizar o prompt na hora de gerar
-    # pois o prompt "guardado" na análise inicial usou o estilo default.
     estilo_selecionado = st.selectbox("ESTILO VISUAL", list(ESTILOS.keys()), key=f"st_{reset_k}")
     formato_selecionado = st.selectbox("FORMATO", ["1:1 (Quadrado)", "16:9 (Paisagem)", "9:16 (Stories)"], key=f"fmt_{reset_k}")
     
@@ -342,7 +321,6 @@ with col2:
         if st.button("🔍 AMPLIAR / DOWNLOAD", type="secondary", key=f"modal_btn_{reset_k}"):
             show_full_image(st.session_state.last_image_bytes, st.session_state.last_token_usage)
 
-    # Habilita botão se tiver análise feita
     pode_gerar = st.session_state.analyzed_content is not None
     
     label_btn = "GERAR INFOGRÁFICO [RENDER]"
@@ -350,24 +328,15 @@ with col2:
         label_btn = "♻️ RE-GERAR (SUBSTITUIR ATUAL)"
     
     if st.button(label_btn, type="primary", disabled=not pode_gerar, key=f"btn_gen_{reset_k}"):
-        # RE-ANALISE RÁPIDA PARA APLICAR ESTILO/IDIOMA NOVO
-        # Como o usuário pode ter mudado o estilo APÓS o upload,
-        # precisamos atualizar o prompt antes de gerar a imagem.
-        
         with st.spinner(">> ATUALIZANDO ROTEIRO E RENDERIZANDO..."):
             content_part = process_uploaded_file(uploaded_file)
-            
-            # Recria o prompt com as configurações finais escolhidas
             _, prompt_final_tecnico, _ = analyze_and_create_prompt(
                 content_part, 
                 estilo_selecionado, 
                 idioma_selecionado, 
                 densidade_selecionada
             )
-            
-            # Adiciona detalhes do estilo
             prompt_completo = f"{prompt_final_tecnico} Style Details: {ESTILOS[estilo_selecionado]}"
-            
             img_bytes_raw = generate_image(prompt_completo, formato_selecionado)
             
             if img_bytes_raw:
