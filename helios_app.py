@@ -58,9 +58,9 @@ if not api_key:
     st.warning(">> ALERTA: INSIRA A CHAVE DE ACESSO PARA INICIAR.")
     st.stop()
 
-# --- CONFIGURAÇÃO CLIENTE (CORREÇÃO DE VERSÃO AQUI) ---
+# --- CONFIGURAÇÃO CLIENTE ---
 try:
-    # Mudança para v1beta para suportar Imagen 3
+    # Mantemos v1beta pois é onde o Imagen costuma habitar
     client = genai.Client(api_key=api_key, http_options={"api_version": "v1beta"})
 except Exception as e:
     st.error(f"Erro de Conexão: {e}")
@@ -94,7 +94,7 @@ def summarize_career(resume_text):
     Do NOT output the resume text. Output a descriptive PROMPT in English.
     
     Structure:
-    "An infographic layout showing a career timeline. Key milestones: [List 3-4 major roles]. Theme: Professional growth in [Industry]. Icons representing skills: [List skills]. Visual flow from [Start Date] to [End Date]."
+    "An infographic layout showing a career timeline. Key milestones: [List 3-4 major roles]. Theme: Professional growth in [Industry]. Icons representing skills: [List skills]. Visual flow from [Start Date] to [End Date]. Text elements are minimal and bold."
     
     Resume:
     """ + resume_text[:6000]
@@ -115,29 +115,40 @@ def generate_image(prompt_visual, style_name, style_desc, aspect_ratio):
         f"Create a professional infographic image in {style_name} style. "
         f"{style_desc} "
         f"The content depicts: {prompt_visual}. "
-        f"High resolution, detailed, clean text layout representation, 8k."
+        f"High resolution, detailed, clean text layout representation, 8k, infographic design."
     )
     
-    # Parametros de Aspecto
     ar_param = "1:1"
     if "16:9" in aspect_ratio: ar_param = "16:9"
     elif "9:16" in aspect_ratio: ar_param = "9:16"
 
+    # TENTATIVA 1: IMAGEN 3 (Nano Banana Pro)
     try:
-        # Tenta o modelo padrão do Imagen 3
+        # print("Tentando Imagen 3...")
         response = client.models.generate_images(
             model='imagen-3.0-generate-001',
             prompt=full_prompt,
             config={'aspect_ratio': ar_param}
         )
-        return response.generated_images[0].image
+        return response.generated_images[0].image, "NANO BANANA PRO (IMAGEN 3)"
+        
     except Exception as e:
-        st.error(f"Erro Imagen 3: {e}")
-        return None
+        # TENTATIVA 2: IMAGEN 2 (Fallback Robusto)
+        # print(f"Imagen 3 falhou ({e}), tentando Imagen 2...")
+        try:
+            response = client.models.generate_images(
+                model='imagen-2.0-generate-001',
+                prompt=full_prompt,
+                config={'aspect_ratio': ar_param}
+            )
+            return response.generated_images[0].image, "IMAGEN 2 (COMPATIBILIDADE)"
+        except Exception as e2:
+            st.error(f"Erro Fatal (Todos os modelos falharam): {e2}")
+            return None, "ERRO"
 
 # --- INTERFACE ---
 st.title("HELIOS // RESUME INFOGRAPHIC")
-st.markdown("`[MOTOR: NANO BANANA PRO (IMAGEN 3) + GEMINI]`")
+st.markdown("`[MOTOR: NANO BANANA PRO (AUTO-FALLBACK)]`")
 st.markdown("---")
 
 col1, col2 = st.columns([1, 1])
@@ -164,14 +175,18 @@ with col2:
                 resumo_visual = summarize_career(texto_cv)
             
             if resumo_visual:
-                with st.spinner(f">> 3/3 RENDERIZANDO (Pode levar 10-20s)..."):
-                    img_bytes = generate_image(resumo_visual, estilo_selecionado, ESTILOS[estilo_selecionado], formato_selecionado)
+                with st.spinner(f">> 3/3 RENDERIZANDO (Tentando Imagen 3...)..."):
+                    img_bytes, modelo_usado = generate_image(resumo_visual, estilo_selecionado, ESTILOS[estilo_selecionado], formato_selecionado)
                     
                     if img_bytes:
                         image = Image.open(io.BytesIO(img_bytes.image_bytes))
-                        image_placeholder.image(image, caption="RESULTADO FINAL", use_container_width=True)
+                        image_placeholder.image(image, caption=f"INFOGRÁFICO GERADO VIA {modelo_usado}", use_container_width=True)
                         
                         buf = io.BytesIO()
                         image.save(buf, format="PNG")
                         st.download_button("⬇️ BAIXAR (PNG)", data=buf.getvalue(), file_name="helios_resume.png", mime="image/png")
-                        st.success("SUCESSO.")
+                        
+                        if "IMAGEN 3" in modelo_usado:
+                            st.success(">> SUCESSO: Renderizado com NANO BANANA PRO.")
+                        else:
+                            st.warning(f">> AVISO: Nano Banana Pro (v3) indisponível na sua chave. Renderizado com {modelo_usado}.")
