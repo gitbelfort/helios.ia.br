@@ -9,7 +9,7 @@ import pypdf
 import docx
 
 # --- CONFIGURAÇÃO VISUAL TRON ---
-st.set_page_config(page_title="HELIOS | UNIVERSAL GEN", page_icon="🟡", layout="wide")
+st.set_page_config(page_title="HELIOS | SYSTEM", page_icon="🟡", layout="wide")
 
 st.markdown("""
     <style>
@@ -29,6 +29,22 @@ st.markdown("""
     .stButton > button:hover { background-color: #FFD700; color: #000000; box-shadow: 0 0 20px #FFD700; }
     
     [data-testid='stFileUploader'] { border: 1px dashed #FFD700; padding: 20px; background-color: #050505; }
+    
+    /* Área de Descrição da Análise */
+    .analysis-box {
+        border: 1px solid #333;
+        background-color: #111;
+        padding: 15px;
+        margin-top: 10px;
+        border-left: 5px solid #00FF00; /* Verde Matrix */
+        font-size: 0.9em;
+        color: #EEE !important;
+    }
+    .analysis-title {
+        color: #00FF00 !important;
+        font-weight: bold;
+        margin-bottom: 5px;
+    }
     
     .token-box {
         font-size: 0.8em;
@@ -50,7 +66,7 @@ st.markdown("""
 # --- MODELO ---
 MODELO_IMAGEM_FIXO = "gemini-3-pro-image-preview"
 
-# --- ESTADO ---
+# --- GERENCIAMENTO DE ESTADO ---
 if 'last_image_bytes' not in st.session_state:
     st.session_state.last_image_bytes = None
 if 'last_token_usage' not in st.session_state:
@@ -58,9 +74,20 @@ if 'last_token_usage' not in st.session_state:
 if 'reset_trigger' not in st.session_state:
     st.session_state.reset_trigger = 0
 
+# Estado para a Análise Prévia
+if 'analyzed_content' not in st.session_state:
+    st.session_state.analyzed_content = None # Texto descritivo para o usuário
+if 'ready_prompt' not in st.session_state:
+    st.session_state.ready_prompt = None # Prompt técnico para o Nano Banana
+if 'last_uploaded_file_id' not in st.session_state:
+    st.session_state.last_uploaded_file_id = None
+
 def reset_all():
     st.session_state.last_image_bytes = None
     st.session_state.last_token_usage = None
+    st.session_state.analyzed_content = None
+    st.session_state.ready_prompt = None
+    st.session_state.last_uploaded_file_id = None
     st.session_state.reset_trigger += 1
 
 # --- ESTILOS ---
@@ -78,10 +105,10 @@ ESTILOS = {
 # --- AUTH ---
 with st.sidebar:
     st.title("🟡 HELIOS")
-    st.markdown("**UNIVERSAL INFOGRAPHIC GEN**")
+    st.markdown("**UNIVERSAL INFOGRAPHIC**")
     api_key = st.text_input("CHAVE DE ACESSO (API KEY)", type="password")
     st.markdown("---")
-    if st.button("♻️ LIMPAR / NOVA GERAÇÃO"):
+    if st.button("♻️ LIMPAR TUDO"):
         reset_all()
         st.rerun()
     st.info("SISTEMA ONLINE\nDOMÍNIO: HELIOS.IA.BR")
@@ -95,9 +122,14 @@ client = genai.Client(api_key=api_key, http_options={"api_version": "v1beta"})
 # --- FUNÇÕES ---
 
 def process_uploaded_file(uploaded_file):
+    """
+    Processa arquivos e retorna o objeto Part correto.
+    CORREÇÃO APLICADA: mime_type passado como keyword argument.
+    """
     try:
         # IMAGEM
         if uploaded_file.type in ["image/png", "image/jpeg", "image/jpg", "image/webp"]:
+            # CORREÇÃO: mime_type=...
             return types.Part.from_bytes(uploaded_file.getvalue(), mime_type=uploaded_file.type)
         
         # TEXTO
@@ -119,32 +151,42 @@ def process_uploaded_file(uploaded_file):
         st.error(f"Erro ao processar arquivo: {e}")
         return None
 
-def create_super_prompt(content_part, style_name, idioma, densidade):
-    # Lógica de Inteligência EXPANDIDA para qualquer objeto
-    prompt_text = f"""
-    ROLE: You are an Elite Content Analyst and Art Director using Gemini Image Generation.
-    TASK: Analyze the provided Input (Text or Image) and generate a detailed IMAGE PROMPT for an infographic.
-
-    INPUT ANALYSIS & CLASSIFICATION LOGIC:
-    1.  **IF TEXT/RESUME:** Create a "Career Timeline" infographic. Extract roles, skills, dates.
-    2.  **IF IMAGE IS A DISH/FOOD:** Identify it. Create a "Recipe & Variations" infographic.
-    3.  **IF IMAGE IS A PLACE/MONUMENT:** Identify it. Create a "Travel Guide & History" infographic.
-    4.  **IF IMAGE IS A LIVING BEING (Animal/Plant/Pet):** Identify the species/breed. Create a "Biology, Care & Fun Facts" infographic.
-    5.  **IF IMAGE IS A PHYSICAL OBJECT (Gadget/Tool/Toy/Furniture/Car):** Identify the item. Create a "Technical Specs, History & Utility" infographic. Break down its parts or explain how it works.
-    6.  **IF IMAGE IS A CHARACTER/ART:** Analyze the design. Create a "Character Lore & Stats" infographic.
-    7.  **IF IMAGE IS UNCLEAR:** OUTPUT EXACTLY: "INVALID_CONTENT".
-
-    OUTPUT CONFIGURATION:
-    -   Target Style: {style_name}
-    -   Target Language (FOR THE TEXT INSIDE IMAGE): {idioma}
-    -   Density: {densidade}
-
-    INSTRUCTIONS FOR THE FINAL PROMPT:
-    -   Write a single, descriptive prompt for an image generator (Nano Banana).
-    -   Explicitly command: "Render all visible text in {idioma}".
-    -   Describe the layout, the central subject, and the surrounding data blocks (text/charts).
+def analyze_and_create_prompt(content_part, style_name, idioma, densidade):
+    """
+    Função Dupla:
+    1. Gera uma Descrição para o Usuário (Resumo).
+    2. Gera o Prompt Técnico para o Nano Banana.
+    """
     
-    START OUTPUT WITH: "A high-resolution, text-rich infographic in {style_name} style..."
+    instrucao_densidade = ""
+    if densidade == "Conciso":
+        instrucao_densidade = "Use MINIMAL TEXT. Focus heavily on icons/headlines."
+    elif densidade == "Detalhado (BETA)":
+        instrucao_densidade = "Use HIGH TEXT DENSITY. Include detailed descriptions."
+    else:
+        instrucao_densidade = "Use BALANCED TEXT and VISUALS."
+
+    prompt_text = f"""
+    ROLE: Elite Content Analyst & Art Director.
+    TASK: Analyze the Input (Text/Image) and output TWO distinct sections.
+    
+    SECTION 1: USER_SUMMARY
+    - Write a short paragraph (in Portuguese) describing exactly what was identified in the file.
+    - Example: "Identifiquei uma foto de um prato de Feijoada com arroz, couve e laranja." or "Identifiquei o currículo de um Engenheiro de Software Sênior."
+    
+    SECTION 2: PROMPT
+    - Write a highly detailed IMAGE GENERATION PROMPT for Gemini/Nano Banana based on the analysis.
+    - LOGIC:
+      - Resume -> Career Timeline.
+      - Food -> Recipe & Variations.
+      - Object -> Tech Specs & History.
+      - Place -> Travel Guide.
+    - CONFIG: Style={style_name}, Language={idioma}, Density={instrucao_densidade}.
+    - CRITICAL: "Render all visible text in {idioma}".
+    
+    OUTPUT FORMAT:
+    USER_SUMMARY: [Your summary here]
+    PROMPT: [Your long prompt here]
     """
     
     try:
@@ -158,19 +200,22 @@ def create_super_prompt(content_part, style_name, idioma, densidade):
         
         result_text = response.text
         
-        if "INVALID_CONTENT" in result_text:
-            return "INVALID", None
-            
-        usage = "N/A"
-        if response.usage_metadata:
-            u = response.usage_metadata
-            usage = f"Input: {u.prompt_token_count} | Output: {u.candidates_token_count} | Total: {u.total_token_count}"
-            
-        return result_text, usage
+        # Parser simples para separar o Resumo do Prompt
+        summary = "Análise concluída."
+        prompt = ""
+        
+        if "USER_SUMMARY:" in result_text and "PROMPT:" in result_text:
+            parts = result_text.split("PROMPT:")
+            summary_part = parts[0].replace("USER_SUMMARY:", "").strip()
+            prompt_part = parts[1].strip()
+            return summary_part, prompt_part, response.usage_metadata
+        else:
+            # Fallback se a IA não formatar direito
+            return "Conteúdo identificado. Pronto para gerar.", result_text, response.usage_metadata
         
     except Exception as e:
         st.error(f"Erro na análise inteligente: {e}")
-        return None, None
+        return None, None, None
 
 def generate_image(prompt_visual, aspect_ratio):
     ar = "1:1"
@@ -214,21 +259,12 @@ def show_full_image(image_bytes, token_info):
         )
     with col_tok:
         if token_info:
-            st.markdown(f"<div class='token-box'>💎 CONSUMO DE INTELEGÊNCIA:<br>{token_info}</div>", unsafe_allow_html=True)
+            u = token_info
+            info_text = f"Input: {u.prompt_token_count} | Output: {u.candidates_token_count}"
+            st.markdown(f"<div class='token-box'>💎 CUSTO DE ANÁLISE:<br>{info_text}</div>", unsafe_allow_html=True)
 
 # --- UI ---
-st.title("HELIOS // UNIVERSAL INFOGRAPHIC v2.4")
-
-st.markdown(f"""
-<div class="instruction-box">
-    <strong>📘 MANUAL DE OPERAÇÃO UNIVERSAL:</strong>
-    <ul>
-        <li><strong>Qualquer Input:</strong> Suba Currículos, Textos ou <strong>FOTOS DE QUALQUER COISA</strong>.</li>
-        <li><strong>Análise Inteligente:</strong> O sistema identifica se é um animal, objeto, lugar ou comida e adapta o infográfico.</li>
-        <li><strong>Exemplo:</strong> Foto de um Gato -> Infográfico sobre a raça. Foto de um Tênis -> Infográfico técnico.</li>
-    </ul>
-</div>
-""", unsafe_allow_html=True)
+st.title("HELIOS // UNIVERSAL INFOGRAPHIC")
 
 col1, col2 = st.columns([1, 1])
 reset_k = st.session_state.reset_trigger
@@ -241,7 +277,53 @@ with col1:
         key=f"up_{reset_k}"
     )
 
+    # --- LÓGICA DE ANÁLISE IMEDIATA ---
+    if uploaded_file:
+        # Verifica se é um arquivo novo para não re-analisar a cada clique
+        current_file_id = uploaded_file.file_id if hasattr(uploaded_file, 'file_id') else uploaded_file.name
+        
+        if current_file_id != st.session_state.last_uploaded_file_id:
+            # É um arquivo novo! Limpa resultados anteriores e analisa
+            st.session_state.analyzed_content = None
+            st.session_state.ready_prompt = None
+            st.session_state.last_image_bytes = None # Limpa imagem antiga
+            
+            with st.spinner("🧠 CÉREBRO GEMINI: Lendo e Entendendo o arquivo..."):
+                # Captura parâmetros atuais do form para o primeiro prompt
+                # (O usuário pode mudar depois e re-analisar se quiser, mas pegamos o default)
+                # Nota: Para ser perfeito, teríamos que re-analisar se o usuário mudar o estilo.
+                # Mas para "descrever o conteúdo", o estilo não importa tanto.
+                # Vamos usar um default para a análise inicial.
+                
+                content_part = process_uploaded_file(uploaded_file)
+                if content_part:
+                    # Analisa com os defaults atuais da UI (mesmo que ainda não renderizados)
+                    # Como estamos no mesmo script run, usamos defaults seguros
+                    summary, prompt, tokens = analyze_and_create_prompt(
+                        content_part, 
+                        "HYPERBOLD TYPOGRAPHY", # Default para análise
+                        "Português (Brasil)", 
+                        "Padrão"
+                    )
+                    
+                    st.session_state.analyzed_content = summary
+                    st.session_state.ready_prompt = prompt # Prompt base
+                    st.session_state.last_token_usage = tokens
+                    st.session_state.last_uploaded_file_id = current_file_id
+
+        # Exibe a análise SE ela existir
+        if st.session_state.analyzed_content:
+            st.markdown(f"""
+            <div class="analysis-box">
+                <div class="analysis-title">✅ CONTEÚDO IDENTIFICADO:</div>
+                {st.session_state.analyzed_content}
+            </div>
+            """, unsafe_allow_html=True)
+
+
     st.subheader(">> 2. CONFIGURAÇÃO")
+    # Nota: Se o usuário mudar o estilo aqui, precisaremos atualizar o prompt na hora de gerar
+    # pois o prompt "guardado" na análise inicial usou o estilo default.
     estilo_selecionado = st.selectbox("ESTILO VISUAL", list(ESTILOS.keys()), key=f"st_{reset_k}")
     formato_selecionado = st.selectbox("FORMATO", ["1:1 (Quadrado)", "16:9 (Paisagem)", "9:16 (Stories)"], key=f"fmt_{reset_k}")
     
@@ -255,37 +337,39 @@ with col2:
     
     if st.session_state.last_image_bytes:
         img_preview = Image.open(io.BytesIO(st.session_state.last_image_bytes))
-        preview_placeholder.image(img_preview, caption="PREVIEW (Clique abaixo para ampliar)", width=400)
+        preview_placeholder.image(img_preview, caption="PREVIEW", width=400)
         
         if st.button("🔍 AMPLIAR / DOWNLOAD", type="secondary", key=f"modal_btn_{reset_k}"):
             show_full_image(st.session_state.last_image_bytes, st.session_state.last_token_usage)
 
-    pode_gerar = uploaded_file is not None and estilo_selecionado
+    # Habilita botão se tiver análise feita
+    pode_gerar = st.session_state.analyzed_content is not None
     
     label_btn = "GERAR INFOGRÁFICO [RENDER]"
     if st.session_state.last_image_bytes:
         label_btn = "♻️ RE-GERAR (SUBSTITUIR ATUAL)"
     
     if st.button(label_btn, type="primary", disabled=not pode_gerar, key=f"btn_gen_{reset_k}"):
-        if uploaded_file:
-            preview_placeholder.empty()
-            st.session_state.last_image_bytes = None
+        # RE-ANALISE RÁPIDA PARA APLICAR ESTILO/IDIOMA NOVO
+        # Como o usuário pode ter mudado o estilo APÓS o upload,
+        # precisamos atualizar o prompt antes de gerar a imagem.
+        
+        with st.spinner(">> ATUALIZANDO ROTEIRO E RENDERIZANDO..."):
+            content_part = process_uploaded_file(uploaded_file)
             
-            with st.spinner(">> 1/3 CÉREBRO GEMINI: IDENTIFICANDO OBJETO/SER..."):
-                content_part = process_uploaded_file(uploaded_file)
+            # Recria o prompt com as configurações finais escolhidas
+            _, prompt_final_tecnico, _ = analyze_and_create_prompt(
+                content_part, 
+                estilo_selecionado, 
+                idioma_selecionado, 
+                densidade_selecionada
+            )
             
-            if content_part:
-                with st.spinner(f">> 2/3 CRIANDO ROTEIRO ({idioma_selecionado})..."):
-                    prompt_otimizado, tokens = create_super_prompt(content_part, estilo_selecionado, idioma_selecionado, densidade_selecionada)
-                
-                if prompt_otimizado == "INVALID":
-                    st.error("🚫 ERRO: Conteúdo não identificado. Certifique-se que o objeto/ser esteja visível.")
-                elif prompt_otimizado:
-                    with st.spinner(f">> 3/3 RENDERIZANDO PIXELS..."):
-                        prompt_final = f"{prompt_otimizado} Style Details: {ESTILOS[estilo_selecionado]}"
-                        img_bytes_raw = generate_image(prompt_final, formato_selecionado)
-                        
-                        if img_bytes_raw:
-                            st.session_state.last_image_bytes = img_bytes_raw
-                            st.session_state.last_token_usage = tokens
-                            st.rerun()
+            # Adiciona detalhes do estilo
+            prompt_completo = f"{prompt_final_tecnico} Style Details: {ESTILOS[estilo_selecionado]}"
+            
+            img_bytes_raw = generate_image(prompt_completo, formato_selecionado)
+            
+            if img_bytes_raw:
+                st.session_state.last_image_bytes = img_bytes_raw
+                st.rerun()
