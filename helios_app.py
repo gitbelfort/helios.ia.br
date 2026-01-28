@@ -30,85 +30,48 @@ st.markdown("""
     .stTextInput, .stSelectbox, .stFileUploader, .stRadio { color: #FFD700; }
     .stSelectbox > div > div { background-color: #111; color: #FFD700; border: 1px solid #FFD700; }
     
-    /* Estado Desabilitado (Cinza Matrix Escuro) */
     .stSelectbox[aria-disabled="true"] > div > div {
-        background-color: #222 !important;
-        color: #555 !important;
-        border-color: #333 !important;
-        opacity: 0.6;
+        background-color: #222 !important; color: #555 !important; border-color: #333 !important; opacity: 0.6;
     }
     
-    /* BOTÃO SECUNDÁRIO (LIMPAR) - AMARELO */
+    /* BOTÕES */
     button[kind="secondary"] {
-        background-color: #000000 !important;
-        color: #FFD700 !important;
-        border: 2px solid #FFD700 !important;
-        border-radius: 0px; 
-        text-transform: uppercase; 
-        transition: 0.3s; 
-        font-weight: bold; 
-        font-size: 1.1em;
+        background-color: #000000 !important; color: #FFD700 !important;
+        border: 2px solid #FFD700 !important; border-radius: 0px; 
+        text-transform: uppercase; transition: 0.3s; font-weight: bold; font-size: 1.1em;
     }
     button[kind="secondary"]:hover {
-        box-shadow: 0 0 20px #FFD700 !important;
-        color: #000000 !important;
-        background-color: #FFD700 !important;
+        box-shadow: 0 0 20px #FFD700 !important; color: #000000 !important; background-color: #FFD700 !important;
     }
 
-    /* BOTÃO PRIMÁRIO (GERAR) - VERDE MATRIX (#00FF00) */
     button[kind="primary"] {
-        background-color: #000000 !important;
-        color: #00FF00 !important;
-        border: 2px solid #00FF00 !important;
-        border-radius: 0px; 
-        text-transform: uppercase; 
-        transition: 0.3s; 
-        font-weight: bold; 
-        font-size: 1.1em;
+        background-color: #000000 !important; color: #00FF00 !important;
+        border: 2px solid #00FF00 !important; border-radius: 0px; 
+        text-transform: uppercase; transition: 0.3s; font-weight: bold; font-size: 1.1em;
     }
     button[kind="primary"]:hover {
-        box-shadow: 0 0 20px #00FF00 !important;
-        color: #000000 !important;
-        background-color: #00FF00 !important;
+        box-shadow: 0 0 20px #00FF00 !important; color: #000000 !important; background-color: #00FF00 !important;
     }
     
     [data-testid='stFileUploader'] { border: 1px dashed #FFD700; padding: 20px; background-color: #050505; }
     
     .analysis-box {
-        border: 1px solid #333;
-        background-color: #111;
-        padding: 15px;
-        margin-top: 10px;
-        border-left: 5px solid #00FF00;
-        font-size: 0.9em;
-        color: #EEE !important;
+        border: 1px solid #333; background-color: #111; padding: 15px; margin-top: 10px;
+        border-left: 5px solid #00FF00; font-size: 0.9em; color: #EEE !important;
     }
     .analysis-title { color: #00FF00 !important; font-weight: bold; margin-bottom: 5px; }
     
     .instruction-box {
-        border: 1px solid #FFD700;
-        background-color: #0a0a0a;
-        padding: 15px;
-        margin-bottom: 25px;
-        border-left: 8px solid #FFD700;
+        border: 1px solid #FFD700; background-color: #0a0a0a; padding: 15px; margin-bottom: 25px; border-left: 8px solid #FFD700;
     }
     
     .token-box {
-        font-size: 0.8em;
-        color: #888 !important;
-        margin-top: 10px;
-        border-top: 1px solid #333;
-        padding-top: 5px;
+        font-size: 0.8em; color: #888 !important; margin-top: 10px; border-top: 1px solid #333; padding-top: 5px;
     }
     
     .privacy-text {
-        text-align: center;
-        color: #666 !important;
-        font-size: 0.7em;
-        margin-top: 15px;
-        border-top: 1px dashed #333;
-        padding-top: 10px;
-        line-height: 1.4;
+        text-align: center; color: #666 !important; font-size: 0.7em; margin-top: 15px;
+        border-top: 1px dashed #333; padding-top: 10px; line-height: 1.4;
     }
     
     .footer {
@@ -124,8 +87,9 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- MODELO ---
-MODELO_IMAGEM_FIXO = "gemini-3-pro-image-preview"
+# --- MODELOS ---
+MODELO_IMAGEM_FIXO = "gemini-3-pro-image-preview" # Gerador de Pixels (Pintor)
+MODELO_TEXTO_FIXO = "gemini-1.5-flash" # Cérebro Lógico (Estável)
 
 # --- ESTADO ---
 keys_to_init = [
@@ -212,8 +176,9 @@ def verify_text_safety(text_content):
     - RESUME/ARTICLE -> "SAFE_CONTENT"
     """
     try:
+        # USA MODELO ESTÁVEL (FLASH 1.5)
         response = client.models.generate_content(
-            model="gemini-2.0-flash-exp",
+            model=MODELO_TEXTO_FIXO,
             contents=[types.Part.from_text(text=security_prompt), types.Part.from_text(text=text_content[:20000])]
         )
         result = response.text.strip()
@@ -228,8 +193,10 @@ def initial_analysis(content_data, file_type):
     try:
         if file_type == "TEXT": c_part = types.Part.from_text(text=content_data)
         else: c_part = content_data
+        
+        # USA MODELO ESTÁVEL (FLASH 1.5)
         response = client.models.generate_content(
-            model="gemini-2.0-flash-exp",
+            model=MODELO_TEXTO_FIXO,
             contents=[types.Part.from_text(text=prompt), c_part]
         )
         return response.text
@@ -237,10 +204,6 @@ def initial_analysis(content_data, file_type):
         return "Conteúdo carregado."
 
 def create_final_prompt(content_data, file_type, mode, style_name, style_details, idioma, densidade, formato_selecionado):
-    """
-    Gera o prompt final.
-    """
-    
     instrucao_densidade = ""
     if densidade == "Conciso": instrucao_densidade = "Use MINIMAL TEXT. High visual impact."
     elif densidade == "Detalhado (BETA)": instrucao_densidade = "Use HIGH TEXT DENSITY."
@@ -253,65 +216,54 @@ def create_final_prompt(content_data, file_type, mode, style_name, style_details
         model_input.append(content_data)
         
         if "RESTAURAR" in mode:
-            # PROMPT DE RESTAURAÇÃO + OUTPAINTING
+            # RESTAURAÇÃO + COLORIZAÇÃO
             logic_instruction = f"""
             TASK: RESTORATION AND PRESERVATION.
-            Restore this damaged or aged photograph to its original quality while maintaining complete faithfulness to the original context and historical authenticity. 
-            Remove all physical damage including scratches, tears, creases, dust spots, stains, and missing sections. 
-            Repair fading and discoloration by restoring original colors and tones without over-saturation. 
-            Enhance clarity and sharpness by reconstructing blurry details into accurate physical details based on surrounding context. 
-            Apply natural lighting correction with proper shadows and highlights. 
-            Add authentic surface textures including natural skin pores, fabric properties, and material accuracy where damaged areas need reconstruction. 
-            Preserve all original composition, poses, expressions, and historical characteristics. 
-            Use proper depth of field and realistic color grading that matches the original time period. 
-            Output should appear as a clean, well-preserved version of the original photograph with all damage repaired and quality improved while remaining completely true to the source image at maximum resolution.
+            Restore this damaged or aged photograph to its original quality.
             
-            CRITICAL FORMAT INSTRUCTION:
-            The user requested the output format: {formato_selecionado}.
-            If the original image does not fit this ratio, you MUST realistic EXTEND the background (outpainting) to fill the frame seamlessly.
-            Do not stretch the subject. Extend the scenery logically to match the environment.
+            1. REPAIR: Remove scratches, tears, creases, dust spots, and stains. 
+            2. COLORIZATION: If the source image is Black & White or Sepia, you MUST COLORIZE it using realistic colors appropriate for the era, skin tones, and materials. If it is already colored, correct fading.
+            3. CLARITY: Enhance sharpness by reconstructing blurry details based on context.
+            4. PRESERVATION: Maintain original composition, poses, and expressions exactly.
+            5. OUTPAINTING: The requested format is {formato_selecionado}. If the image is smaller/different ratio, extend the background seamlessly to fill the frame.
             """
         
         elif "APLICAR ESTILO" in mode:
-            # STYLE TRANSFER
             logic_instruction = f"""
-            TASK: STYLE TRANSFER / FILTER APPLICATION.
-            1. PRESERVE THE IDENTITY: You MUST maintain the facial features, expression, pose, and composition of the input image EXACTLY.
-            2. SUBJECT: Keep the person/object recognizable as the specific individual in the photo.
-            3. APPLY STYLE: Apply the {style_name} aesthetic ({style_details}) as a filter/render style.
-            4. Change lighting, texture, and background to match the style, but keep the subject's structure intact.
+            TASK: STYLE TRANSFER.
+            1. IDENTITY: Maintain facial features, pose, and composition EXACTLY.
+            2. STYLE: Apply the {style_name} aesthetic ({style_details}) as a filter.
             """
         else:
-            # EDUCACIONAL
             logic_instruction = f"""
-            TASK: EDUCATIONAL INFOGRAPHIC GENERATION.
-            1. Identify the main subject (Food/Object/Person).
-            2. Create a layout where the subject is central.
-            3. Retrieve knowledge: Recipes (if food), Specs (if object), or Bio/Facts.
-            4. Surround the subject with this data visually.
-            5. Style: {style_name}.
+            TASK: EDUCATIONAL INFOGRAPHIC.
+            1. Identify subject.
+            2. Create layout with central subject.
+            3. Add facts/recipes.
+            4. Style: {style_name}.
             """
     
     else: # TEXT
         model_input.append(types.Part.from_text(text=content_data))
         logic_instruction = f"""
         TASK: TEXT TO VISUAL MASTERPIECE.
-        1. If it's a IMAGE PROMPT: Render it with {style_name} aesthetics.
-        2. If it's a RESUME: Create a 'Career Timeline' infographic.
-        3. If it's an ARTICLE: Create a 'Visual Summary' infographic.
+        1. IMAGE PROMPT -> Render with {style_name}.
+        2. RESUME -> Career Timeline infographic.
+        3. ARTICLE -> Visual Summary infographic.
         """
 
     full_prompt = f"""
-    ROLE: World-Class Art Director & Restoration Expert.
+    ROLE: Art Director & Restoration Expert.
     TASK: {logic_instruction}
     CONFIG: Language={idioma}, Density={instrucao_densidade}.
-    OUTPUT: Write the raw image generation prompt. Start with 'A high-resolution...'.
+    OUTPUT: Raw image generation prompt starting with 'A high-resolution...'.
     """
     
     try:
         model_input.insert(0, types.Part.from_text(text=full_prompt))
+        # USA MODELO ESTÁVEL (FLASH 1.5)
         response = client.models.generate_content(
-            model="gemini-2.0-flash-exp",
+            model=MODELO_TEXTO_FIXO,
             contents=model_input
         )
         return response.text, response.usage_metadata
@@ -357,11 +309,11 @@ def show_full_image(image_bytes, token_info):
         if token_info: st.markdown(f"<div class='token-box'>💎 CUSTO: {token_info.prompt_token_count} in / {token_info.candidates_token_count} out</div>", unsafe_allow_html=True)
 
 # --- UI PRINCIPAL ---
-st.title("🟡 HELIOS // UNIVERSAL v5.7")
+st.title("🟡 HELIOS // UNIVERSAL v5.8")
 
 st.markdown(f"""
 <div class="instruction-box">
-    <strong>📘 MANUAL DE OPERAÇÕES v5.7:</strong>
+    <strong>📘 MANUAL DE OPERAÇÕES v5.8:</strong>
     <ul>
         <li><strong>1. Input Universal:</strong> Suba seu arquivo de texto (PDF/DOC/TXT) ou imagem (JPG/PNG). O sistema entende o que é.</li>
         <li><strong>2. Prompts de Texto:</strong> Pode subir arquivos contendo prompts de imagem OU artigos completos para resumo.</li>
@@ -369,7 +321,7 @@ st.markdown(f"""
             <ul>
                 <li><em>Re-Imagine:</em> Aplica filtro/estilo sobre a foto.</li>
                 <li><em>Infográfico:</em> Cria dados explicativos sobre o objeto.</li>
-                <li><em>Restaurar:</em> Recupera fotos antigas e completa bordas (Outpainting).</li>
+                <li><em>Restaurar:</em> Recupera fotos, colore (se P&B) e completa bordas.</li>
             </ul>
         </li>
         <li style="color: #00FF00; font-weight: bold; margin-top: 5px;">5. DESTAQUE: Envie seu currículo e visualize a jornada da sua carreira em uma imagem épica!</li>
@@ -430,21 +382,20 @@ with col1:
                 "CRIAR INFOGRÁFICO EXPLICATIVO (DADOS/RECEITA)",
                 "RESTAURAR FOTO ANTIGA OU DANIFICADA (BETA)"
             ],
-            index=0, # Padrão Re-Imagine
+            index=0, 
             label_visibility="collapsed", 
             key=f"mode_{reset_k}"
         )
         
         if "RESTAURAR" in modo_imagem:
             is_restoring = True
-            st.caption("ℹ️ Repara danos físicos, cor e expande o cenário para caber no formato (Outpainting).")
+            st.caption("ℹ️ Restaura danos, colore (se P&B) e expande o cenário (Outpainting).")
         elif "Explicativo" in modo_imagem:
             st.caption("ℹ️ Identifica o objeto/prato e cria um infográfico com dados.")
         else:
             st.caption("ℹ️ Recria a cena mantendo a composição original, mudando a arte.")
         st.markdown("---")
 
-    # DESABILITA CAMPOS SE ESTIVER RESTAURANDO
     estilo = st.selectbox("ESTILO VISUAL", list(ESTILOS.keys()), key=f"st_{reset_k}", disabled=is_restoring)
     fmt = st.selectbox("FORMATO", ["1:1 (Quadrado)", "16:9 (Paisagem)", "9:16 (Stories)"], key=f"fmt_{reset_k}")
     
@@ -472,13 +423,11 @@ with col1:
                     )
                     if final_prompt:
                         prompt_w_style = final_prompt
-                        # Se NÃO for restaurar, adiciona os detalhes do estilo. 
-                        # Se FOR restaurar, o prompt já está completo.
                         if not is_restoring:
                             prompt_w_style = f"{final_prompt} Style Guidelines: {ESTILOS[estilo]}"
                         
-                        # Referência visual: Sempre necessária para Imagem
                         ref_img = None
+                        # MANDA REFERÊNCIA VISUAL SE FOR IMAGEM (Restaurar OU Re-Imagine)
                         if st.session_state.file_type_detected == "IMAGE":
                             ref_img = st.session_state.original_image_part
                         
