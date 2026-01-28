@@ -87,9 +87,9 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- MODELOS ---
-MODELO_IMAGEM_FIXO = "gemini-3-pro-image-preview" # Gerador de Pixels (Pintor)
-MODELO_TEXTO_FIXO = "gemini-1.5-flash" # Cérebro Lógico (Estável)
+# --- MODELOS (DUAL CORE) ---
+MODELO_IMAGEM_FIXO = "gemini-3-pro-image-preview" # O Pintor (Gera Pixels)
+MODELO_TEXTO_FIXO = "gemini-2.0-flash" # O Cérebro (Lógica/Texto) - Atualizado para 2.0 Flash Stable
 
 # --- ESTADO ---
 keys_to_init = [
@@ -176,7 +176,7 @@ def verify_text_safety(text_content):
     - RESUME/ARTICLE -> "SAFE_CONTENT"
     """
     try:
-        # USA MODELO ESTÁVEL (FLASH 1.5)
+        # CÉREBRO: LÓGICA DE TEXTO
         response = client.models.generate_content(
             model=MODELO_TEXTO_FIXO,
             contents=[types.Part.from_text(text=security_prompt), types.Part.from_text(text=text_content[:20000])]
@@ -186,7 +186,7 @@ def verify_text_safety(text_content):
         if "SAFE_CONTENT" in result: return True, text_content
         return True, result
     except Exception as e:
-        return False, f"Erro: {e}"
+        return False, f"Erro no cérebro ({MODELO_TEXTO_FIXO}): {e}"
 
 def initial_analysis(content_data, file_type):
     prompt = "Identifique o conteúdo de forma concisa em Português."
@@ -194,7 +194,7 @@ def initial_analysis(content_data, file_type):
         if file_type == "TEXT": c_part = types.Part.from_text(text=content_data)
         else: c_part = content_data
         
-        # USA MODELO ESTÁVEL (FLASH 1.5)
+        # CÉREBRO: LÓGICA DE TEXTO
         response = client.models.generate_content(
             model=MODELO_TEXTO_FIXO,
             contents=[types.Part.from_text(text=prompt), c_part]
@@ -216,7 +216,6 @@ def create_final_prompt(content_data, file_type, mode, style_name, style_details
         model_input.append(content_data)
         
         if "RESTAURAR" in mode:
-            # RESTAURAÇÃO + COLORIZAÇÃO
             logic_instruction = f"""
             TASK: RESTORATION AND PRESERVATION.
             Restore this damaged or aged photograph to its original quality.
@@ -261,14 +260,14 @@ def create_final_prompt(content_data, file_type, mode, style_name, style_details
     
     try:
         model_input.insert(0, types.Part.from_text(text=full_prompt))
-        # USA MODELO ESTÁVEL (FLASH 1.5)
+        # CÉREBRO: LÓGICA DE TEXTO
         response = client.models.generate_content(
             model=MODELO_TEXTO_FIXO,
             contents=model_input
         )
         return response.text, response.usage_metadata
     except Exception as e:
-        st.error(f"Erro no cérebro: {e}")
+        st.error(f"Erro no cérebro ({MODELO_TEXTO_FIXO}): {e}")
         return None, None
 
 def generate_image_pixels(prompt_text, aspect_ratio, reference_image=None):
@@ -281,6 +280,7 @@ def generate_image_pixels(prompt_text, aspect_ratio, reference_image=None):
         generation_contents.append(reference_image)
 
     try:
+        # PINTOR: GERAÇÃO DE PIXELS
         response = client.models.generate_content(
             model=MODELO_IMAGEM_FIXO,
             contents=generation_contents,
@@ -309,11 +309,11 @@ def show_full_image(image_bytes, token_info):
         if token_info: st.markdown(f"<div class='token-box'>💎 CUSTO: {token_info.prompt_token_count} in / {token_info.candidates_token_count} out</div>", unsafe_allow_html=True)
 
 # --- UI PRINCIPAL ---
-st.title("🟡 HELIOS // UNIVERSAL v5.8")
+st.title("🟡 HELIOS // UNIVERSAL v5.9")
 
 st.markdown(f"""
 <div class="instruction-box">
-    <strong>📘 MANUAL DE OPERAÇÕES v5.8:</strong>
+    <strong>📘 MANUAL DE OPERAÇÕES v5.9:</strong>
     <ul>
         <li><strong>1. Input Universal:</strong> Suba seu arquivo de texto (PDF/DOC/TXT) ou imagem (JPG/PNG). O sistema entende o que é.</li>
         <li><strong>2. Prompts de Texto:</strong> Pode subir arquivos contendo prompts de imagem OU artigos completos para resumo.</li>
@@ -427,7 +427,6 @@ with col1:
                             prompt_w_style = f"{final_prompt} Style Guidelines: {ESTILOS[estilo]}"
                         
                         ref_img = None
-                        # MANDA REFERÊNCIA VISUAL SE FOR IMAGEM (Restaurar OU Re-Imagine)
                         if st.session_state.file_type_detected == "IMAGE":
                             ref_img = st.session_state.original_image_part
                         
