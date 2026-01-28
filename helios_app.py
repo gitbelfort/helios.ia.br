@@ -30,6 +30,14 @@ st.markdown("""
     .stTextInput, .stSelectbox, .stFileUploader, .stRadio { color: #FFD700; }
     .stSelectbox > div > div { background-color: #111; color: #FFD700; border: 1px solid #FFD700; }
     
+    /* Estado Desabilitado (Cinza Matrix Escuro) */
+    .stSelectbox[aria-disabled="true"] > div > div {
+        background-color: #222 !important;
+        color: #555 !important;
+        border-color: #333 !important;
+        opacity: 0.6;
+    }
+    
     /* BOTÃO SECUNDÁRIO (LIMPAR) - AMARELO */
     button[kind="secondary"] {
         background-color: #000000 !important;
@@ -172,7 +180,6 @@ client = genai.Client(api_key=api_key, http_options={"api_version": "v1beta"})
 def process_uploaded_file(uploaded_file):
     try:
         if uploaded_file.type in ["image/png", "image/jpeg", "image/jpg", "image/webp"]:
-            # Armazena o objeto PART para uso futuro (referência visual)
             img_part = types.Part(inline_data=types.Blob(mime_type=uploaded_file.type, data=uploaded_file.getvalue()))
             return img_part, "IMAGE"
         
@@ -229,7 +236,11 @@ def initial_analysis(content_data, file_type):
     except Exception as e:
         return "Conteúdo carregado."
 
-def create_final_prompt(content_data, file_type, mode, style_name, style_details, idioma, densidade):
+def create_final_prompt(content_data, file_type, mode, style_name, style_details, idioma, densidade, formato_selecionado):
+    """
+    Gera o prompt final.
+    """
+    
     instrucao_densidade = ""
     if densidade == "Conciso": instrucao_densidade = "Use MINIMAL TEXT. High visual impact."
     elif densidade == "Detalhado (BETA)": instrucao_densidade = "Use HIGH TEXT DENSITY."
@@ -239,28 +250,49 @@ def create_final_prompt(content_data, file_type, mode, style_name, style_details
     model_input = []
     
     if file_type == "IMAGE":
-        # Se for imagem, mandamos ela pro prompt creator analisar o que é
         model_input.append(content_data)
         
-        if mode == "APLICAR ESTILO VISUAL (RE-IMAGINE)":
-            # PROMPT CRÍTICO PARA PRESERVAÇÃO DE IDENTIDADE
+        if "RESTAURAR" in mode:
+            # PROMPT DE RESTAURAÇÃO + OUTPAINTING
+            logic_instruction = f"""
+            TASK: RESTORATION AND PRESERVATION.
+            Restore this damaged or aged photograph to its original quality while maintaining complete faithfulness to the original context and historical authenticity. 
+            Remove all physical damage including scratches, tears, creases, dust spots, stains, and missing sections. 
+            Repair fading and discoloration by restoring original colors and tones without over-saturation. 
+            Enhance clarity and sharpness by reconstructing blurry details into accurate physical details based on surrounding context. 
+            Apply natural lighting correction with proper shadows and highlights. 
+            Add authentic surface textures including natural skin pores, fabric properties, and material accuracy where damaged areas need reconstruction. 
+            Preserve all original composition, poses, expressions, and historical characteristics. 
+            Use proper depth of field and realistic color grading that matches the original time period. 
+            Output should appear as a clean, well-preserved version of the original photograph with all damage repaired and quality improved while remaining completely true to the source image at maximum resolution.
+            
+            CRITICAL FORMAT INSTRUCTION:
+            The user requested the output format: {formato_selecionado}.
+            If the original image does not fit this ratio, you MUST realistic EXTEND the background (outpainting) to fill the frame seamlessly.
+            Do not stretch the subject. Extend the scenery logically to match the environment.
+            """
+        
+        elif "APLICAR ESTILO" in mode:
+            # STYLE TRANSFER
             logic_instruction = f"""
             TASK: STYLE TRANSFER / FILTER APPLICATION.
             1. PRESERVE THE IDENTITY: You MUST maintain the facial features, expression, pose, and composition of the input image EXACTLY.
-            2. SUBJECT: Keep the person/object recognizable as the specific individual in the photo. Do not generate a generic person.
-            3. APPLY STYLE: Apply the {style_name} aesthetic ({style_details}) as a filter/render style over the existing subject.
+            2. SUBJECT: Keep the person/object recognizable as the specific individual in the photo.
+            3. APPLY STYLE: Apply the {style_name} aesthetic ({style_details}) as a filter/render style.
             4. Change lighting, texture, and background to match the style, but keep the subject's structure intact.
             """
         else:
+            # EDUCACIONAL
             logic_instruction = f"""
-            TASK: EDUCATIONAL INFOGRAPHIC.
-            1. Identify the subject.
-            2. Create a layout with the subject central.
-            3. Add recipes/specs/facts around it.
-            4. Style: {style_name}.
+            TASK: EDUCATIONAL INFOGRAPHIC GENERATION.
+            1. Identify the main subject (Food/Object/Person).
+            2. Create a layout where the subject is central.
+            3. Retrieve knowledge: Recipes (if food), Specs (if object), or Bio/Facts.
+            4. Surround the subject with this data visually.
+            5. Style: {style_name}.
             """
     
-    else: 
+    else: # TEXT
         model_input.append(types.Part.from_text(text=content_data))
         logic_instruction = f"""
         TASK: TEXT TO VISUAL MASTERPIECE.
@@ -270,11 +302,12 @@ def create_final_prompt(content_data, file_type, mode, style_name, style_details
         """
 
     full_prompt = f"""
-    ROLE: Art Director.
+    ROLE: World-Class Art Director & Restoration Expert.
     TASK: {logic_instruction}
     CONFIG: Language={idioma}, Density={instrucao_densidade}.
     OUTPUT: Write the raw image generation prompt. Start with 'A high-resolution...'.
     """
+    
     try:
         model_input.insert(0, types.Part.from_text(text=full_prompt))
         response = client.models.generate_content(
@@ -287,19 +320,11 @@ def create_final_prompt(content_data, file_type, mode, style_name, style_details
         return None, None
 
 def generate_image_pixels(prompt_text, aspect_ratio, reference_image=None):
-    """
-    Função de Geração Final.
-    Agora aceita 'reference_image' para fazer Image-to-Image se disponível/necessário.
-    """
     ar = "1:1"
     if "16:9" in aspect_ratio: ar = "16:9"
     elif "9:16" in aspect_ratio: ar = "9:16"
     
-    # Monta o payload
     generation_contents = [types.Part.from_text(text=prompt_text)]
-    
-    # SE TIVER UMA IMAGEM DE REFERÊNCIA (Modo Style Transfer), ENVIAMOS ELA JUNTO!
-    # Isso força o modelo a usar a imagem como base (Img2Img)
     if reference_image:
         generation_contents.append(reference_image)
 
@@ -332,16 +357,21 @@ def show_full_image(image_bytes, token_info):
         if token_info: st.markdown(f"<div class='token-box'>💎 CUSTO: {token_info.prompt_token_count} in / {token_info.candidates_token_count} out</div>", unsafe_allow_html=True)
 
 # --- UI PRINCIPAL ---
-st.title("🟡 HELIOS // UNIVERSAL v5.6")
+st.title("🟡 HELIOS // UNIVERSAL v5.7")
 
 st.markdown(f"""
 <div class="instruction-box">
-    <strong>📘 MANUAL DE OPERAÇÕES:</strong>
+    <strong>📘 MANUAL DE OPERAÇÕES v5.7:</strong>
     <ul>
         <li><strong>1. Input Universal:</strong> Suba seu arquivo de texto (PDF/DOC/TXT) ou imagem (JPG/PNG). O sistema entende o que é.</li>
         <li><strong>2. Prompts de Texto:</strong> Pode subir arquivos contendo prompts de imagem OU artigos completos para resumo.</li>
-        <li><strong>3. Modo de Imagem:</strong> Escolha entre <em>"Apenas Estilizar"</em> ou <em>"Explicativo"</em>.</li>
-        <li><strong>4. Limites:</strong> Máximo 30 páginas ou 100k caracteres.</li>
+        <li><strong>3. Modos de Imagem:</strong> 
+            <ul>
+                <li><em>Re-Imagine:</em> Aplica filtro/estilo sobre a foto.</li>
+                <li><em>Infográfico:</em> Cria dados explicativos sobre o objeto.</li>
+                <li><em>Restaurar:</em> Recupera fotos antigas e completa bordas (Outpainting).</li>
+            </ul>
+        </li>
         <li style="color: #00FF00; font-weight: bold; margin-top: 5px;">5. DESTAQUE: Envie seu currículo e visualize a jornada da sua carreira em uma imagem épica!</li>
     </ul>
 </div>
@@ -362,7 +392,7 @@ with col1:
             st.session_state.last_image_bytes = None
             st.session_state.security_check_passed = False
             st.session_state.clean_prompt_content = None
-            st.session_state.original_image_part = None # Reset imagem original
+            st.session_state.original_image_part = None
             
             with st.spinner("🛡️ HELIOS SECURITY: VERIFICANDO INTEGRIDADE..."):
                 content_raw, ftype = process_uploaded_file(uploaded_file)
@@ -378,8 +408,7 @@ with col1:
                         else: st.error(f"🚫 {clean_content}")
                     else: 
                         st.session_state.security_check_passed = True
-                        st.session_state.clean_prompt_content = content_raw # É a Imagem Part
-                        # SALVA A IMAGEM ORIGINAL PARA REFERÊNCIA NO RENDER FINAL
+                        st.session_state.clean_prompt_content = content_raw 
                         st.session_state.original_image_part = content_raw 
                         st.session_state.file_type_detected = "IMAGE"
                         st.session_state.analyzed_content = initial_analysis(content_raw, "IMAGE")
@@ -389,25 +418,44 @@ with col1:
             st.markdown(f"""<div class="analysis-box"><div class="analysis-title">✅ CONTEÚDO APROVADO:</div>{st.session_state.analyzed_content}</div>""", unsafe_allow_html=True)
 
     st.subheader(">> 2. CONFIGURAÇÃO")
-    modo_imagem = "PADRÃO"
+    modo_imagem = "APLICAR ESTILO VISUAL (RE-IMAGINE)"
+    is_restoring = False
+    
     if st.session_state.file_type_detected == "IMAGE":
         st.markdown("**MODO DE OPERAÇÃO DA IMAGEM**")
-        modo_imagem = st.radio("MODO", ["APLICAR ESTILO VISUAL (RE-IMAGINE)", "CRIAR INFOGRÁFICO EXPLICATIVO (DADOS/RECEITA)"], index=1, label_visibility="collapsed", key=f"mode_{reset_k}")
-        if "Explicativo" in modo_imagem: st.caption("ℹ️ Identifica o objeto/prato e cria um infográfico com dados.")
-        else: st.caption("ℹ️ Recria a cena mantendo a composição original, mudando a arte.")
+        modo_imagem = st.radio(
+            "MODO",
+            [
+                "APLICAR ESTILO VISUAL (RE-IMAGINE)", 
+                "CRIAR INFOGRÁFICO EXPLICATIVO (DADOS/RECEITA)",
+                "RESTAURAR FOTO ANTIGA OU DANIFICADA (BETA)"
+            ],
+            index=0, # Padrão Re-Imagine
+            label_visibility="collapsed", 
+            key=f"mode_{reset_k}"
+        )
+        
+        if "RESTAURAR" in modo_imagem:
+            is_restoring = True
+            st.caption("ℹ️ Repara danos físicos, cor e expande o cenário para caber no formato (Outpainting).")
+        elif "Explicativo" in modo_imagem:
+            st.caption("ℹ️ Identifica o objeto/prato e cria um infográfico com dados.")
+        else:
+            st.caption("ℹ️ Recria a cena mantendo a composição original, mudando a arte.")
         st.markdown("---")
 
-    estilo = st.selectbox("ESTILO VISUAL", list(ESTILOS.keys()), key=f"st_{reset_k}")
+    # DESABILITA CAMPOS SE ESTIVER RESTAURANDO
+    estilo = st.selectbox("ESTILO VISUAL", list(ESTILOS.keys()), key=f"st_{reset_k}", disabled=is_restoring)
     fmt = st.selectbox("FORMATO", ["1:1 (Quadrado)", "16:9 (Paisagem)", "9:16 (Stories)"], key=f"fmt_{reset_k}")
+    
     st.subheader(">> 3. CONTEÚDO")
-    lang = st.selectbox("IDIOMA", ["Português (Brasil)", "Inglês", "Espanhol", "Francês"], key=f"lang_{reset_k}")
-    dens = st.selectbox("DENSIDADE", ["Conciso", "Padrão", "Detalhado (BETA)"], index=1, key=f"dens_{reset_k}")
+    lang = st.selectbox("IDIOMA", ["Português (Brasil)", "Inglês", "Espanhol", "Francês"], key=f"lang_{reset_k}", disabled=is_restoring)
+    dens = st.selectbox("DENSIDADE", ["Conciso", "Padrão", "Detalhado (BETA)"], index=1, key=f"dens_{reset_k}", disabled=is_restoring)
 
     st.markdown("---")
     b_col1, b_col2 = st.columns(2)
     with b_col1:
         pode_gerar = st.session_state.security_check_passed
-        # BOTÃO VERDE
         if st.button("GERAR IMAGEM", type="primary", use_container_width=True, disabled=not pode_gerar, key=f"gen_{reset_k}"):
             with st.spinner(">> RENDERIZANDO PIXELS..."):
                 safe_content = st.session_state.clean_prompt_content
@@ -419,14 +467,19 @@ with col1:
                         estilo, 
                         ESTILOS[estilo], 
                         lang, 
-                        dens
+                        dens,
+                        fmt
                     )
                     if final_prompt:
-                        prompt_w_style = f"{final_prompt} Style Guidelines: {ESTILOS[estilo]}"
+                        prompt_w_style = final_prompt
+                        # Se NÃO for restaurar, adiciona os detalhes do estilo. 
+                        # Se FOR restaurar, o prompt já está completo.
+                        if not is_restoring:
+                            prompt_w_style = f"{final_prompt} Style Guidelines: {ESTILOS[estilo]}"
                         
-                        # LOGICA CRÍTICA: Se for imagem e modo Re-Imagine, envia a imagem original para o gerador
+                        # Referência visual: Sempre necessária para Imagem
                         ref_img = None
-                        if st.session_state.file_type_detected == "IMAGE" and "RE-IMAGINE" in modo_imagem:
+                        if st.session_state.file_type_detected == "IMAGE":
                             ref_img = st.session_state.original_image_part
                         
                         img_bytes = generate_image_pixels(prompt_w_style, fmt, reference_image=ref_img)
