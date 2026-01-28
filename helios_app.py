@@ -30,11 +30,39 @@ st.markdown("""
     .stTextInput, .stSelectbox, .stFileUploader, .stRadio { color: #FFD700; }
     .stSelectbox > div > div { background-color: #111; color: #FFD700; border: 1px solid #FFD700; }
     
-    .stButton > button { 
-        background-color: #000000; color: #FFD700; border: 2px solid #FFD700; 
-        border-radius: 0px; text-transform: uppercase; transition: 0.3s; width: 100%; font-weight: bold; font-size: 1.1em;
+    /* BOTÃO SECUNDÁRIO (LIMPAR) - AMARELO */
+    button[kind="secondary"] {
+        background-color: #000000 !important;
+        color: #FFD700 !important;
+        border: 2px solid #FFD700 !important;
+        border-radius: 0px; 
+        text-transform: uppercase; 
+        transition: 0.3s; 
+        font-weight: bold; 
+        font-size: 1.1em;
     }
-    .stButton > button:hover { background-color: #FFD700; color: #000000; box-shadow: 0 0 20px #FFD700; }
+    button[kind="secondary"]:hover {
+        box-shadow: 0 0 20px #FFD700 !important;
+        color: #000000 !important;
+        background-color: #FFD700 !important;
+    }
+
+    /* BOTÃO PRIMÁRIO (GERAR) - VERDE (SOLICITADO) */
+    button[kind="primary"] {
+        background-color: #000000 !important;
+        color: #00FF00 !important; /* Texto Verde */
+        border: 2px solid #00FF00 !important; /* Borda Verde */
+        border-radius: 0px; 
+        text-transform: uppercase; 
+        transition: 0.3s; 
+        font-weight: bold; 
+        font-size: 1.1em;
+    }
+    button[kind="primary"]:hover {
+        box-shadow: 0 0 20px #00FF00 !important; /* Brilho Verde */
+        color: #000000 !important;
+        background-color: #00FF00 !important; /* Fundo Verde */
+    }
     
     [data-testid='stFileUploader'] { border: 1px dashed #FFD700; padding: 20px; background-color: #050505; }
     
@@ -198,7 +226,12 @@ def initial_analysis(content_data, file_type):
     except Exception as e:
         return "Conteúdo carregado."
 
-def create_final_prompt(content_data, file_type, mode, style_name, idioma, densidade):
+def create_final_prompt(content_data, file_type, mode, style_name, style_details, idioma, densidade):
+    """
+    Gera o prompt final.
+    AGORA COM INJEÇÃO AGRESSIVA DE ESTILO para o modo 'RE-IMAGINE'.
+    """
+    
     instrucao_densidade = ""
     if densidade == "Conciso": instrucao_densidade = "Use MINIMAL TEXT. High visual impact."
     elif densidade == "Detalhado (BETA)": instrucao_densidade = "Use HIGH TEXT DENSITY."
@@ -210,25 +243,41 @@ def create_final_prompt(content_data, file_type, mode, style_name, idioma, densi
     if file_type == "IMAGE":
         model_input.append(content_data)
         if mode == "APLICAR ESTILO VISUAL (RE-IMAGINE)":
-            logic_instruction = f"RECREATE this scene strictly in {style_name} style. Maintain composition. Do NOT add new data."
-        else:
-            logic_instruction = f"Identify the subject. Create an EDUCATIONAL INFOGRAPHIC with recipes/specs/facts around it. Style: {style_name}."
+            # PROMPT MAIS FORTE PARA FORÇAR O ESTILO
+            logic_instruction = f"""
+            TASK: RE-IMAGINE THIS IMAGE.
+            1. Analyze the subject (person/object) and composition.
+            2. RECREATE the exact same subject but change the universe/rendering to match the {style_name} style.
+            3. **STYLE ENFORCEMENT:** Apply these rules aggressively: {style_details}
+            4. If the style is 'RETRO-FUTURISM', force neon lights, chrome, synthwave colors, and grain. 
+            5. Do NOT just output a standard photo. It MUST look like the chosen art style.
+            """
+        else: # Explicativo
+            logic_instruction = f"""
+            TASK: EDUCATIONAL INFOGRAPHIC GENERATION.
+            1. Identify the main subject (Food/Object/Person).
+            2. Create a layout where the subject is central.
+            3. Retrieve knowledge: Recipes (if food), Specs (if object), or Bio/Facts.
+            4. Surround the subject with this data visually.
+            5. Style: {style_name}.
+            """
     
-    else: 
+    else: # TEXT
         model_input.append(types.Part.from_text(text=content_data))
         logic_instruction = f"""
-        TASK: Convert this text into a visual masterpiece.
-        1. If it's a specific IMAGE PROMPT: Enhance it with {style_name} aesthetics.
+        TASK: TEXT TO VISUAL MASTERPIECE.
+        1. If it's a IMAGE PROMPT: Render it with {style_name} aesthetics.
         2. If it's a RESUME: Create a 'Career Timeline' infographic.
-        3. If it's an ARTICLE/MANIFESTO: Create a 'Visual Summary' infographic.
+        3. If it's an ARTICLE: Create a 'Visual Summary'.
         """
 
     full_prompt = f"""
-    ROLE: Art Director.
+    ROLE: World-Class Art Director.
     TASK: {logic_instruction}
     CONFIG: Language={idioma}, Density={instrucao_densidade}.
-    OUTPUT: Raw image generation prompt starting with 'A high-resolution...'.
+    OUTPUT: Write the raw image generation prompt. Start with 'A high-resolution...'.
     """
+    
     try:
         model_input.insert(0, types.Part.from_text(text=full_prompt))
         response = client.models.generate_content(
@@ -270,7 +319,7 @@ def show_full_image(image_bytes, token_info):
         if token_info: st.markdown(f"<div class='token-box'>💎 CUSTO: {token_info.prompt_token_count} in / {token_info.candidates_token_count} out</div>", unsafe_allow_html=True)
 
 # --- UI PRINCIPAL ---
-st.title("🟡 HELIOS // UNIVERSAL v5.4")
+st.title("🟡 HELIOS // UNIVERSAL v5.5")
 
 st.markdown(f"""
 <div class="instruction-box">
@@ -339,15 +388,24 @@ with col1:
     dens = st.selectbox("DENSIDADE", ["Conciso", "Padrão", "Detalhado (BETA)"], index=1, key=f"dens_{reset_k}")
 
     st.markdown("---")
-    # BOTÕES INVERTIDOS (GERAR NA ESQUERDA)
     b_col1, b_col2 = st.columns(2)
     with b_col1:
         pode_gerar = st.session_state.security_check_passed
+        # BOTÃO GERAR AGORA É VERDE (PRIMARY)
         if st.button("GERAR IMAGEM", type="primary", use_container_width=True, disabled=not pode_gerar, key=f"gen_{reset_k}"):
             with st.spinner(">> RENDERIZANDO PIXELS..."):
                 safe_content = st.session_state.clean_prompt_content
                 if safe_content:
-                    final_prompt, tokens = create_final_prompt(safe_content, st.session_state.file_type_detected, modo_imagem, estilo, lang, dens)
+                    # Passamos a descrição detalhada do estilo para o prompt
+                    final_prompt, tokens = create_final_prompt(
+                        safe_content, 
+                        st.session_state.file_type_detected, 
+                        modo_imagem, 
+                        estilo, 
+                        ESTILOS[estilo], # Style Details 
+                        lang, 
+                        dens
+                    )
                     if final_prompt:
                         prompt_w_style = f"{final_prompt} Style Guidelines: {ESTILOS[estilo]}"
                         img_bytes = generate_image_pixels(prompt_w_style, fmt)
@@ -356,11 +414,11 @@ with col1:
                             st.session_state.last_token_usage = tokens
                             st.rerun()
     with b_col2:
-        if st.button("LIMPAR TELA", use_container_width=True, key=f"clr_{reset_k}"):
+        # BOTÃO LIMPAR AGORA É AMARELO (SECONDARY)
+        if st.button("LIMPAR TELA", type="secondary", use_container_width=True, key=f"clr_{reset_k}"):
             reset_all()
             st.rerun()
     
-    # DISCLAIMER DE PRIVACIDADE
     st.markdown("""
     <div class="privacy-text">
         🔒 <strong>PRIVACIDADE & RESPONSABILIDADE</strong><br>
