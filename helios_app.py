@@ -47,11 +47,11 @@ st.markdown("""
         background-color: #FFD700 !important;
     }
 
-    /* BOTÃO PRIMÁRIO (GERAR) - VERDE (SOLICITADO) */
+    /* BOTÃO PRIMÁRIO (GERAR) - VERDE MATRIX (#00FF00) */
     button[kind="primary"] {
         background-color: #000000 !important;
-        color: #00FF00 !important; /* Texto Verde */
-        border: 2px solid #00FF00 !important; /* Borda Verde */
+        color: #00FF00 !important;
+        border: 2px solid #00FF00 !important;
         border-radius: 0px; 
         text-transform: uppercase; 
         transition: 0.3s; 
@@ -59,9 +59,9 @@ st.markdown("""
         font-size: 1.1em;
     }
     button[kind="primary"]:hover {
-        box-shadow: 0 0 20px #00FF00 !important; /* Brilho Verde */
+        box-shadow: 0 0 20px #00FF00 !important;
         color: #000000 !important;
-        background-color: #00FF00 !important; /* Fundo Verde */
+        background-color: #00FF00 !important;
     }
     
     [data-testid='stFileUploader'] { border: 1px dashed #FFD700; padding: 20px; background-color: #050505; }
@@ -123,7 +123,7 @@ MODELO_IMAGEM_FIXO = "gemini-3-pro-image-preview"
 keys_to_init = [
     'last_image_bytes', 'last_token_usage', 'reset_trigger', 
     'analyzed_content', 'file_type_detected', 'last_uploaded_file_id',
-    'security_check_passed', 'clean_prompt_content'
+    'security_check_passed', 'clean_prompt_content', 'original_image_part'
 ]
 for key in keys_to_init:
     if key not in st.session_state:
@@ -137,6 +137,7 @@ def reset_all():
     st.session_state.last_uploaded_file_id = None
     st.session_state.security_check_passed = False
     st.session_state.clean_prompt_content = None
+    st.session_state.original_image_part = None
     st.session_state.reset_trigger += 1
 
 # --- ESTILOS ---
@@ -171,7 +172,9 @@ client = genai.Client(api_key=api_key, http_options={"api_version": "v1beta"})
 def process_uploaded_file(uploaded_file):
     try:
         if uploaded_file.type in ["image/png", "image/jpeg", "image/jpg", "image/webp"]:
-            return types.Part(inline_data=types.Blob(mime_type=uploaded_file.type, data=uploaded_file.getvalue())), "IMAGE"
+            # Armazena o objeto PART para uso futuro (referência visual)
+            img_part = types.Part(inline_data=types.Blob(mime_type=uploaded_file.type, data=uploaded_file.getvalue()))
+            return img_part, "IMAGE"
         
         text_content = ""
         if uploaded_file.type == "application/pdf":
@@ -227,11 +230,6 @@ def initial_analysis(content_data, file_type):
         return "Conteúdo carregado."
 
 def create_final_prompt(content_data, file_type, mode, style_name, style_details, idioma, densidade):
-    """
-    Gera o prompt final.
-    AGORA COM INJEÇÃO AGRESSIVA DE ESTILO para o modo 'RE-IMAGINE'.
-    """
-    
     instrucao_densidade = ""
     if densidade == "Conciso": instrucao_densidade = "Use MINIMAL TEXT. High visual impact."
     elif densidade == "Detalhado (BETA)": instrucao_densidade = "Use HIGH TEXT DENSITY."
@@ -241,43 +239,42 @@ def create_final_prompt(content_data, file_type, mode, style_name, style_details
     model_input = []
     
     if file_type == "IMAGE":
+        # Se for imagem, mandamos ela pro prompt creator analisar o que é
         model_input.append(content_data)
+        
         if mode == "APLICAR ESTILO VISUAL (RE-IMAGINE)":
-            # PROMPT MAIS FORTE PARA FORÇAR O ESTILO
+            # PROMPT CRÍTICO PARA PRESERVAÇÃO DE IDENTIDADE
             logic_instruction = f"""
-            TASK: RE-IMAGINE THIS IMAGE.
-            1. Analyze the subject (person/object) and composition.
-            2. RECREATE the exact same subject but change the universe/rendering to match the {style_name} style.
-            3. **STYLE ENFORCEMENT:** Apply these rules aggressively: {style_details}
-            4. If the style is 'RETRO-FUTURISM', force neon lights, chrome, synthwave colors, and grain. 
-            5. Do NOT just output a standard photo. It MUST look like the chosen art style.
+            TASK: STYLE TRANSFER / FILTER APPLICATION.
+            1. PRESERVE THE IDENTITY: You MUST maintain the facial features, expression, pose, and composition of the input image EXACTLY.
+            2. SUBJECT: Keep the person/object recognizable as the specific individual in the photo. Do not generate a generic person.
+            3. APPLY STYLE: Apply the {style_name} aesthetic ({style_details}) as a filter/render style over the existing subject.
+            4. Change lighting, texture, and background to match the style, but keep the subject's structure intact.
             """
-        else: # Explicativo
+        else:
             logic_instruction = f"""
-            TASK: EDUCATIONAL INFOGRAPHIC GENERATION.
-            1. Identify the main subject (Food/Object/Person).
-            2. Create a layout where the subject is central.
-            3. Retrieve knowledge: Recipes (if food), Specs (if object), or Bio/Facts.
-            4. Surround the subject with this data visually.
-            5. Style: {style_name}.
+            TASK: EDUCATIONAL INFOGRAPHIC.
+            1. Identify the subject.
+            2. Create a layout with the subject central.
+            3. Add recipes/specs/facts around it.
+            4. Style: {style_name}.
             """
     
-    else: # TEXT
+    else: 
         model_input.append(types.Part.from_text(text=content_data))
         logic_instruction = f"""
         TASK: TEXT TO VISUAL MASTERPIECE.
         1. If it's a IMAGE PROMPT: Render it with {style_name} aesthetics.
         2. If it's a RESUME: Create a 'Career Timeline' infographic.
-        3. If it's an ARTICLE: Create a 'Visual Summary'.
+        3. If it's an ARTICLE: Create a 'Visual Summary' infographic.
         """
 
     full_prompt = f"""
-    ROLE: World-Class Art Director.
+    ROLE: Art Director.
     TASK: {logic_instruction}
     CONFIG: Language={idioma}, Density={instrucao_densidade}.
     OUTPUT: Write the raw image generation prompt. Start with 'A high-resolution...'.
     """
-    
     try:
         model_input.insert(0, types.Part.from_text(text=full_prompt))
         response = client.models.generate_content(
@@ -289,15 +286,31 @@ def create_final_prompt(content_data, file_type, mode, style_name, style_details
         st.error(f"Erro no cérebro: {e}")
         return None, None
 
-def generate_image_pixels(prompt_text, aspect_ratio):
+def generate_image_pixels(prompt_text, aspect_ratio, reference_image=None):
+    """
+    Função de Geração Final.
+    Agora aceita 'reference_image' para fazer Image-to-Image se disponível/necessário.
+    """
     ar = "1:1"
     if "16:9" in aspect_ratio: ar = "16:9"
     elif "9:16" in aspect_ratio: ar = "9:16"
+    
+    # Monta o payload
+    generation_contents = [types.Part.from_text(text=prompt_text)]
+    
+    # SE TIVER UMA IMAGEM DE REFERÊNCIA (Modo Style Transfer), ENVIAMOS ELA JUNTO!
+    # Isso força o modelo a usar a imagem como base (Img2Img)
+    if reference_image:
+        generation_contents.append(reference_image)
+
     try:
         response = client.models.generate_content(
             model=MODELO_IMAGEM_FIXO,
-            contents=[types.Part.from_text(text=prompt_text)],
-            config=types.GenerateContentConfig(response_modalities=["IMAGE"], image_config=types.ImageConfig(aspect_ratio=ar))
+            contents=generation_contents,
+            config=types.GenerateContentConfig(
+                response_modalities=["IMAGE"], 
+                image_config=types.ImageConfig(aspect_ratio=ar)
+            )
         )
         for part in response.parts:
             if part.inline_data: return part.inline_data.data
@@ -319,7 +332,7 @@ def show_full_image(image_bytes, token_info):
         if token_info: st.markdown(f"<div class='token-box'>💎 CUSTO: {token_info.prompt_token_count} in / {token_info.candidates_token_count} out</div>", unsafe_allow_html=True)
 
 # --- UI PRINCIPAL ---
-st.title("🟡 HELIOS // UNIVERSAL v5.5")
+st.title("🟡 HELIOS // UNIVERSAL v5.6")
 
 st.markdown(f"""
 <div class="instruction-box">
@@ -349,6 +362,7 @@ with col1:
             st.session_state.last_image_bytes = None
             st.session_state.security_check_passed = False
             st.session_state.clean_prompt_content = None
+            st.session_state.original_image_part = None # Reset imagem original
             
             with st.spinner("🛡️ HELIOS SECURITY: VERIFICANDO INTEGRIDADE..."):
                 content_raw, ftype = process_uploaded_file(uploaded_file)
@@ -364,7 +378,9 @@ with col1:
                         else: st.error(f"🚫 {clean_content}")
                     else: 
                         st.session_state.security_check_passed = True
-                        st.session_state.clean_prompt_content = content_raw
+                        st.session_state.clean_prompt_content = content_raw # É a Imagem Part
+                        # SALVA A IMAGEM ORIGINAL PARA REFERÊNCIA NO RENDER FINAL
+                        st.session_state.original_image_part = content_raw 
                         st.session_state.file_type_detected = "IMAGE"
                         st.session_state.analyzed_content = initial_analysis(content_raw, "IMAGE")
                     st.session_state.last_uploaded_file_id = current_id
@@ -391,30 +407,35 @@ with col1:
     b_col1, b_col2 = st.columns(2)
     with b_col1:
         pode_gerar = st.session_state.security_check_passed
-        # BOTÃO GERAR AGORA É VERDE (PRIMARY)
+        # BOTÃO VERDE
         if st.button("GERAR IMAGEM", type="primary", use_container_width=True, disabled=not pode_gerar, key=f"gen_{reset_k}"):
             with st.spinner(">> RENDERIZANDO PIXELS..."):
                 safe_content = st.session_state.clean_prompt_content
                 if safe_content:
-                    # Passamos a descrição detalhada do estilo para o prompt
                     final_prompt, tokens = create_final_prompt(
                         safe_content, 
                         st.session_state.file_type_detected, 
                         modo_imagem, 
                         estilo, 
-                        ESTILOS[estilo], # Style Details 
+                        ESTILOS[estilo], 
                         lang, 
                         dens
                     )
                     if final_prompt:
                         prompt_w_style = f"{final_prompt} Style Guidelines: {ESTILOS[estilo]}"
-                        img_bytes = generate_image_pixels(prompt_w_style, fmt)
+                        
+                        # LOGICA CRÍTICA: Se for imagem e modo Re-Imagine, envia a imagem original para o gerador
+                        ref_img = None
+                        if st.session_state.file_type_detected == "IMAGE" and "RE-IMAGINE" in modo_imagem:
+                            ref_img = st.session_state.original_image_part
+                        
+                        img_bytes = generate_image_pixels(prompt_w_style, fmt, reference_image=ref_img)
+                        
                         if img_bytes:
                             st.session_state.last_image_bytes = img_bytes
                             st.session_state.last_token_usage = tokens
                             st.rerun()
     with b_col2:
-        # BOTÃO LIMPAR AGORA É AMARELO (SECONDARY)
         if st.button("LIMPAR TELA", type="secondary", use_container_width=True, key=f"clr_{reset_k}"):
             reset_all()
             st.rerun()
