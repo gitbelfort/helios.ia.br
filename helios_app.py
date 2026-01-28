@@ -324,7 +324,7 @@ st.markdown(f"""
                 <li><em>Restaurar:</em> Recupera fotos, colore (se P&B) e completa bordas.</li>
             </ul>
         </li>
-        <li style="color: #00FF00; font-weight: bold; margin-top: 5px;">5. DESTAQUE: Envie seu currículo e visualize a jornada da sua carreira em uma imagem épica!</li>
+        <li style="color: #00FF00; font-weight: bold; margin-top: 5px;">4. DESTAQUE: Envie seu currículo e visualize a jornada da sua carreira em uma imagem épica!</li>
     </ul>
 </div>
 """, unsafe_allow_html=True)
@@ -463,3 +463,4 @@ with col2:
         st.info("Aguardando geração...")
 
 st.markdown("""<div class="footer">🟢 SISTEMA ONLINE &nbsp;|&nbsp; HELIOS.IA.BR</div>""", unsafe_allow_html=True)
+
