@@ -8,10 +8,7 @@ import io
 import pypdf
 import docx
 
-# --- ÁREA DE SEGURANÇA ---
-CHAVE_MESTRA = None 
-
-# --- CONFIGURAÇÃO VISUAL TRON ---
+# --- CONFIGURAÇÃO INICIAL (PAGE CONFIG TEM QUE SER A PRIMEIRA LINHA) ---
 st.set_page_config(
     page_title="HELIOS | SYSTEM", 
     page_icon="🟡", 
@@ -19,6 +16,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
+# --- ESTILOS GLOBAIS (TRON THEME) ---
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
@@ -30,10 +28,15 @@ st.markdown("""
     .stTextInput, .stSelectbox, .stFileUploader, .stRadio { color: #FFD700; }
     .stSelectbox > div > div { background-color: #111; color: #FFD700; border: 1px solid #FFD700; }
     
-    .stSelectbox[aria-disabled="true"] > div > div {
-        background-color: #222 !important; color: #555 !important; border-color: #333 !important; opacity: 0.6;
+    /* Input de Senha Centralizado */
+    .stTextInput > div > div > input {
+        background-color: #111;
+        color: #00FF00;
+        border: 1px solid #00FF00;
+        text-align: center;
+        font-size: 1.5em;
     }
-    
+
     /* BOTÕES */
     button[kind="secondary"] {
         background-color: #000000 !important; color: #FFD700 !important;
@@ -53,27 +56,6 @@ st.markdown("""
         box-shadow: 0 0 20px #00FF00 !important; color: #000000 !important; background-color: #00FF00 !important;
     }
     
-    [data-testid='stFileUploader'] { border: 1px dashed #FFD700; padding: 20px; background-color: #050505; }
-    
-    .analysis-box {
-        border: 1px solid #333; background-color: #111; padding: 15px; margin-top: 10px;
-        border-left: 5px solid #00FF00; font-size: 0.9em; color: #EEE !important;
-    }
-    .analysis-title { color: #00FF00 !important; font-weight: bold; margin-bottom: 5px; }
-    
-    .instruction-box {
-        border: 1px solid #FFD700; background-color: #0a0a0a; padding: 15px; margin-bottom: 25px; border-left: 8px solid #FFD700;
-    }
-    
-    .token-box {
-        font-size: 0.8em; color: #888 !important; margin-top: 10px; border-top: 1px solid #333; padding-top: 5px;
-    }
-    
-    .privacy-text {
-        text-align: center; color: #666 !important; font-size: 0.7em; margin-top: 15px;
-        border-top: 1px dashed #333; padding-top: 10px; line-height: 1.4;
-    }
-    
     .footer {
         position: fixed; left: 0; bottom: 0; width: 100%;
         background-color: #000000; color: #00FF00 !important;
@@ -82,14 +64,48 @@ st.markdown("""
         font-family: 'Share Tech Mono', monospace; letter-spacing: 2px;
     }
     
-    div[data-testid="stDialog"] { background-color: #000000; border: 2px solid #FFD700; }
+    /* Esconde elementos padrão do Streamlit */
     header {visibility: hidden;}
     </style>
 """, unsafe_allow_html=True)
 
-# --- MODELOS (DUAL CORE) ---
-MODELO_IMAGEM_FIXO = "gemini-3-pro-image-preview" # O Pintor (Gera Pixels)
-MODELO_TEXTO_FIXO = "gemini-2.0-flash" # O Cérebro (Lógica/Texto) - Atualizado para 2.0 Flash Stable
+# --- CAMADA DE SEGURANÇA (GATEKEEPER) 🔒 ---
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+
+# SE NÃO ESTIVER LOGADO, MOSTRA A TELA DE LOGIN E PARA TUDO
+if not st.session_state.logged_in:
+    
+    # Centralização Visual
+    col_spacer1, col_login, col_spacer2 = st.columns([1, 2, 1])
+    
+    with col_login:
+        st.markdown("<br><br><br>", unsafe_allow_html=True) # Espaço topo
+        st.title("🔒 ACESSO RESTRITO")
+        st.markdown("---")
+        
+        senha_input = st.text_input("DIGITE A SENHA DE SEGURANÇA", type="password")
+        
+        if st.button("ENTRAR NO SISTEMA", type="primary", use_container_width=True):
+            # Verifica se a senha existe nos secrets e se bate
+            if "APP_PASSWORD" in st.secrets and senha_input == st.secrets["APP_PASSWORD"]:
+                st.session_state.logged_in = True
+                st.rerun() # Recarrega a página para entrar no app
+            else:
+                st.error("⛔ ACESSO NEGADO: SENHA INCORRETA")
+    
+    st.stop() # IMPORTANTE: Para a execução do script aqui se não logar
+
+# ==============================================================================
+# DAQUI PARA BAIXO É O CÓDIGO DO HELIOS v5.9 (SÓ CARREGA SE LOGADO)
+# ==============================================================================
+
+# --- ÁREA DE SEGURANÇA INTERNA ---
+CHAVE_MESTRA = None 
+
+# --- MODELOS ---
+MODELO_IMAGEM_FIXO = "gemini-3-pro-image-preview" 
+MODELO_TEXTO_FIXO = "gemini-2.0-flash" 
 
 # --- ESTADO ---
 keys_to_init = [
@@ -112,7 +128,40 @@ def reset_all():
     st.session_state.original_image_part = None
     st.session_state.reset_trigger += 1
 
-# --- ESTILOS ---
+# --- ESTILOS CSS ADICIONAIS ---
+st.markdown("""
+    <style>
+    [data-testid='stFileUploader'] { border: 1px dashed #FFD700; padding: 20px; background-color: #050505; }
+    
+    .analysis-box {
+        border: 1px solid #333; background-color: #111; padding: 15px; margin-top: 10px;
+        border-left: 5px solid #00FF00; font-size: 0.9em; color: #EEE !important;
+    }
+    .analysis-title { color: #00FF00 !important; font-weight: bold; margin-bottom: 5px; }
+    
+    .instruction-box {
+        border: 1px solid #FFD700; background-color: #0a0a0a; padding: 15px; margin-bottom: 25px; border-left: 8px solid #FFD700;
+    }
+    
+    .token-box {
+        font-size: 0.8em; color: #888 !important; margin-top: 10px; border-top: 1px solid #333; padding-top: 5px;
+    }
+    
+    .privacy-text {
+        text-align: center; color: #666 !important; font-size: 0.7em; margin-top: 15px;
+        border-top: 1px dashed #333; padding-top: 10px; line-height: 1.4;
+    }
+    
+    div[data-testid="stDialog"] { background-color: #000000; border: 2px solid #FFD700; }
+    
+    /* Estado Desabilitado */
+    .stSelectbox[aria-disabled="true"] > div > div {
+        background-color: #222 !important; color: #555 !important; border-color: #333 !important; opacity: 0.6;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+# --- DICT DE ESTILOS ---
 ESTILOS = {
     "ANIME BATTLE AESTHETIC": "High-Octane Anime Battle aesthetic. Intense action frames, dramatic energy effects, sharp angles. Colors: electric blues, fiery reds.",
     "3D NEUMORPHISM AESTHETIC": "Tactile 3D Neumorphism. Ultra-soft UI elements, extruded shapes, realistic soft shadows, matte silicone finishes. Clean minimalist palette.",
@@ -124,7 +173,7 @@ ESTILOS = {
     "HYPERBOLD TYPOGRAPHY": "Hyperbold High-Contrast. Massive heavy typography, brutalist shapes. Strict Black & White with one neon accent. Urgent and impactful."
 }
 
-# --- AUTH ---
+# --- AUTH API ---
 api_key = None
 if CHAVE_MESTRA:
     api_key = CHAVE_MESTRA
@@ -132,10 +181,8 @@ elif "GOOGLE_API_KEY" in st.secrets:
     api_key = st.secrets["GOOGLE_API_KEY"]
 
 if not api_key:
-    st.title("🟡 HELIOS SYSTEM")
-    st.markdown("### 🔐 ACESSO RESTRITO REQUERIDO")
-    api_key = st.text_input("INSIRA A CHAVE DE ACESSO (API KEY)", type="password")
-    if not api_key: st.stop()
+    st.error("⚠️ ERRO DE CONFIGURAÇÃO: API Key não encontrada nos Secrets.")
+    st.stop()
 
 client = genai.Client(api_key=api_key, http_options={"api_version": "v1beta"})
 
@@ -176,7 +223,6 @@ def verify_text_safety(text_content):
     - RESUME/ARTICLE -> "SAFE_CONTENT"
     """
     try:
-        # CÉREBRO: LÓGICA DE TEXTO
         response = client.models.generate_content(
             model=MODELO_TEXTO_FIXO,
             contents=[types.Part.from_text(text=security_prompt), types.Part.from_text(text=text_content[:20000])]
@@ -194,7 +240,6 @@ def initial_analysis(content_data, file_type):
         if file_type == "TEXT": c_part = types.Part.from_text(text=content_data)
         else: c_part = content_data
         
-        # CÉREBRO: LÓGICA DE TEXTO
         response = client.models.generate_content(
             model=MODELO_TEXTO_FIXO,
             contents=[types.Part.from_text(text=prompt), c_part]
@@ -260,7 +305,6 @@ def create_final_prompt(content_data, file_type, mode, style_name, style_details
     
     try:
         model_input.insert(0, types.Part.from_text(text=full_prompt))
-        # CÉREBRO: LÓGICA DE TEXTO
         response = client.models.generate_content(
             model=MODELO_TEXTO_FIXO,
             contents=model_input
@@ -280,7 +324,6 @@ def generate_image_pixels(prompt_text, aspect_ratio, reference_image=None):
         generation_contents.append(reference_image)
 
     try:
-        # PINTOR: GERAÇÃO DE PIXELS
         response = client.models.generate_content(
             model=MODELO_IMAGEM_FIXO,
             contents=generation_contents,
@@ -302,18 +345,18 @@ def show_full_image(image_bytes, token_info):
     img = Image.open(io.BytesIO(image_bytes))
     st.image(img, use_container_width=True)
     ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    filename = f"helios-v5-{ts}.png"
+    filename = f"helios-v6-{ts}.png"
     c1, c2 = st.columns(2)
     with c1: st.download_button("⬇️ BAIXAR ARQUIVO", data=image_bytes, file_name=filename, mime="image/png", type="primary", use_container_width=True)
     with c2: 
         if token_info: st.markdown(f"<div class='token-box'>💎 CUSTO: {token_info.prompt_token_count} in / {token_info.candidates_token_count} out</div>", unsafe_allow_html=True)
 
-# --- UI PRINCIPAL ---
-st.title("🟡 HELIOS // UNIVERSAL v5.9")
+# --- UI PRINCIPAL (APÓS LOGIN) ---
+st.title("🟡 HELIOS // UNIVERSAL v6.0")
 
 st.markdown(f"""
 <div class="instruction-box">
-    <strong>📘 MANUAL DE OPERAÇÕES v5.9:</strong>
+    <strong>📘 MANUAL DE OPERAÇÕES v6.0 (SECURE):</strong>
     <ul>
         <li><strong>1. Input Universal:</strong> Suba seu arquivo de texto (PDF/DOC/TXT) ou imagem (JPG/PNG). O sistema entende o que é.</li>
         <li><strong>2. Prompts de Texto:</strong> Pode subir arquivos contendo prompts de imagem OU artigos completos para resumo.</li>
@@ -324,7 +367,7 @@ st.markdown(f"""
                 <li><em>Restaurar:</em> Recupera fotos, colore (se P&B) e completa bordas.</li>
             </ul>
         </li>
-        <li style="color: #00FF00; font-weight: bold; margin-top: 5px;">4. DESTAQUE: Envie seu currículo e visualize a jornada da sua carreira em uma imagem épica!</li>
+        <li style="color: #00FF00; font-weight: bold; margin-top: 5px;">5. DESTAQUE: Envie seu currículo e visualize a jornada da sua carreira em uma imagem épica!</li>
     </ul>
 </div>
 """, unsafe_allow_html=True)
@@ -463,4 +506,3 @@ with col2:
         st.info("Aguardando geração...")
 
 st.markdown("""<div class="footer">🟢 SISTEMA ONLINE &nbsp;|&nbsp; HELIOS.IA.BR</div>""", unsafe_allow_html=True)
-
