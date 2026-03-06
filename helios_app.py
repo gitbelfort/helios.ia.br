@@ -89,7 +89,7 @@ if not st.session_state.logged_in:
     st.stop()
 
 # ==============================================================================
-# HELIOS v7.0 CORE 
+# HELIOS v7.1 CORE 
 # ==============================================================================
 
 CHAVE_MESTRA = None 
@@ -226,7 +226,6 @@ def create_final_prompt(content_data, file_type, mode, style_name, style_details
         model_input.append(content_data)
         
         if "RESTAURAR" in mode:
-            # Lógica Condicional de Cor
             color_instruction = ""
             if colorize:
                 color_instruction = "COLORIZATION COMMAND: You MUST realistically COLORIZE this image. If it is Black & White or Sepia, apply lifelike, historically accurate, and natural colors to skin, clothing, and environment. The final output must be in full color."
@@ -300,9 +299,12 @@ def create_final_prompt(content_data, file_type, mode, style_name, style_details
         return None, None
 
 def generate_image_pixels(prompt_text, aspect_ratio, reference_image=None):
+    # MAPEAMENTO DE FORMATOS ATUALIZADO (v7.1)
     ar = "1:1"
     if "16:9" in aspect_ratio: ar = "16:9"
     elif "9:16" in aspect_ratio: ar = "9:16"
+    elif "4:3" in aspect_ratio: ar = "4:3"
+    elif "3:4" in aspect_ratio: ar = "3:4"
     
     generation_contents = [types.Part.from_text(text=prompt_text)]
     if reference_image:
@@ -337,11 +339,11 @@ def show_full_image(image_bytes, token_info):
         if token_info: st.markdown(f"<div class='token-box'>💎 CUSTO: {token_info.prompt_token_count} in / {token_info.candidates_token_count} out</div>", unsafe_allow_html=True)
 
 # --- UI PRINCIPAL ---
-st.title("🟡 HELIOS // UNIVERSAL v7.0")
+st.title("🟡 HELIOS // UNIVERSAL v7.1")
 
 st.markdown(f"""
 <div class="instruction-box">
-    <strong>📘 MANUAL DE OPERAÇÕES v7.0 (SECURE):</strong>
+    <strong>📘 MANUAL DE OPERAÇÕES v7.1 (SECURE):</strong>
     <ul>
         <li><strong>1. Input Universal:</strong> Suba seu arquivo de texto (PDF/DOC/TXT) ou imagem (JPG/PNG). O sistema entende o que é.</li>
         <li><strong>2. Prompts de Texto:</strong> Pode subir arquivos contendo prompts de imagem OU artigos completos para resumo.</li>
@@ -400,7 +402,7 @@ with col1:
     st.subheader(">> 2. CONFIGURAÇÃO")
     modo_imagem = "APLICAR ESTILO VISUAL (RE-IMAGINE)"
     is_restoring = False
-    colorizar_restauracao = False # Variável para controlar a colorização
+    colorizar_restauracao = False
     
     if st.session_state.file_type_detected == "IMAGE":
         st.markdown("**MODO DE OPERAÇÃO DA IMAGEM**")
@@ -419,7 +421,6 @@ with col1:
         if "RESTAURAR" in modo_imagem:
             is_restoring = True
             st.caption("ℹ️ Restaura em Qualidade Ultra-Premium 8K, preservando 100% da identidade original.")
-            # CHECKBOX DE COLORIZAÇÃO EXCLUSIVO PARA O MODO RESTAURAR
             colorizar_restauracao = st.checkbox("🎨 Colorizar foto (Adicionar cores realistas a fotos P&B)", value=False, key=f"color_{reset_k}")
         elif "Explicativo" in modo_imagem:
             st.caption("ℹ️ Identifica o objeto/prato e cria um infográfico com dados.")
@@ -428,7 +429,16 @@ with col1:
         st.markdown("---")
 
     estilo = st.selectbox("ESTILO VISUAL", list(ESTILOS.keys()), key=f"st_{reset_k}", disabled=is_restoring)
-    fmt = st.selectbox("FORMATO", ["1:1 (Quadrado)", "16:9 (Paisagem)", "9:16 (Stories)"], key=f"fmt_{reset_k}")
+    
+    # LISTA ATUALIZADA DE FORMATOS v7.1
+    formatos_disponiveis = [
+        "1:1 (Quadrado)", 
+        "16:9 (Paisagem Widescreen)", 
+        "9:16 (Vertical/Stories)",
+        "4:3 (Paisagem Clássica)",
+        "3:4 (Retrato Clássico)"
+    ]
+    fmt = st.selectbox("FORMATO", formatos_disponiveis, key=f"fmt_{reset_k}")
     
     st.subheader(">> 3. CONTEÚDO")
     lang = st.selectbox("IDIOMA", ["Português (Brasil)", "Inglês", "Espanhol", "Francês"], key=f"lang_{reset_k}", disabled=is_restoring)
@@ -451,7 +461,7 @@ with col1:
                         lang, 
                         dens,
                         fmt,
-                        colorizar_restauracao # Passa a decisão do usuário
+                        colorizar_restauracao 
                     )
                     if final_prompt:
                         prompt_w_style = final_prompt
