@@ -25,7 +25,7 @@ st.markdown("""
     [data-testid="stSidebar"] { display: none; }
     
     h1, h2, h3, p, label, span, div, li { color: #FFD700 !important; font-family: 'Share Tech Mono', monospace !important; }
-    .stTextInput, .stSelectbox, .stFileUploader, .stRadio { color: #FFD700; }
+    .stTextInput, .stSelectbox, .stFileUploader, .stRadio, .stCheckbox { color: #FFD700; }
     .stSelectbox > div > div { background-color: #111; color: #FFD700; border: 1px solid #FFD700; }
     
     /* Input de Senha Centralizado */
@@ -73,39 +73,29 @@ st.markdown("""
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 
-# SE NÃO ESTIVER LOGADO, MOSTRA A TELA DE LOGIN E PARA TUDO
 if not st.session_state.logged_in:
-    
     col_spacer1, col_login, col_spacer2 = st.columns([1, 2, 1])
-    
     with col_login:
         st.markdown("<br><br><br>", unsafe_allow_html=True)
         st.title("🔒 ACESSO RESTRITO")
         st.markdown("---")
-        
         senha_input = st.text_input("DIGITE A SENHA DE SEGURANÇA", type="password")
-        
         if st.button("ENTRAR NO SISTEMA", type="primary", use_container_width=True):
             if "APP_PASSWORD" in st.secrets and senha_input == st.secrets["APP_PASSWORD"]:
                 st.session_state.logged_in = True
                 st.rerun()
             else:
                 st.error("⛔ ACESSO NEGADO: SENHA INCORRETA")
-    
     st.stop()
 
 # ==============================================================================
-# HELIOS v6.1 CORE (SÓ CARREGA SE LOGADO)
+# HELIOS v7.0 CORE 
 # ==============================================================================
 
-# --- ÁREA DE SEGURANÇA INTERNA ---
 CHAVE_MESTRA = None 
+MODELO_IMAGEM_FIXO = "gemini-3-pro-image-preview" 
+MODELO_TEXTO_FIXO = "gemini-2.0-flash" 
 
-# --- MODELOS ---
-MODELO_IMAGEM_FIXO = "gemini-3-pro-image-preview" # Nano Banana Pro 2 (Pintor)
-MODELO_TEXTO_FIXO = "gemini-2.0-flash" # Flash Stable (Cérebro Lógico)
-
-# --- ESTADO ---
 keys_to_init = [
     'last_image_bytes', 'last_token_usage', 'reset_trigger', 
     'analyzed_content', 'file_type_detected', 'last_uploaded_file_id',
@@ -126,40 +116,19 @@ def reset_all():
     st.session_state.original_image_part = None
     st.session_state.reset_trigger += 1
 
-# --- ESTILOS CSS ADICIONAIS ---
 st.markdown("""
     <style>
     [data-testid='stFileUploader'] { border: 1px dashed #FFD700; padding: 20px; background-color: #050505; }
-    
-    .analysis-box {
-        border: 1px solid #333; background-color: #111; padding: 15px; margin-top: 10px;
-        border-left: 5px solid #00FF00; font-size: 0.9em; color: #EEE !important;
-    }
+    .analysis-box { border: 1px solid #333; background-color: #111; padding: 15px; margin-top: 10px; border-left: 5px solid #00FF00; font-size: 0.9em; color: #EEE !important; }
     .analysis-title { color: #00FF00 !important; font-weight: bold; margin-bottom: 5px; }
-    
-    .instruction-box {
-        border: 1px solid #FFD700; background-color: #0a0a0a; padding: 15px; margin-bottom: 25px; border-left: 8px solid #FFD700;
-    }
-    
-    .token-box {
-        font-size: 0.8em; color: #888 !important; margin-top: 10px; border-top: 1px solid #333; padding-top: 5px;
-    }
-    
-    .privacy-text {
-        text-align: center; color: #666 !important; font-size: 0.7em; margin-top: 15px;
-        border-top: 1px dashed #333; padding-top: 10px; line-height: 1.4;
-    }
-    
+    .instruction-box { border: 1px solid #FFD700; background-color: #0a0a0a; padding: 15px; margin-bottom: 25px; border-left: 8px solid #FFD700; }
+    .token-box { font-size: 0.8em; color: #888 !important; margin-top: 10px; border-top: 1px solid #333; padding-top: 5px; }
+    .privacy-text { text-align: center; color: #666 !important; font-size: 0.7em; margin-top: 15px; border-top: 1px dashed #333; padding-top: 10px; line-height: 1.4; }
     div[data-testid="stDialog"] { background-color: #000000; border: 2px solid #FFD700; }
-    
-    /* Estado Desabilitado */
-    .stSelectbox[aria-disabled="true"] > div > div {
-        background-color: #222 !important; color: #555 !important; border-color: #333 !important; opacity: 0.6;
-    }
+    .stSelectbox[aria-disabled="true"] > div > div { background-color: #222 !important; color: #555 !important; border-color: #333 !important; opacity: 0.6; }
     </style>
 """, unsafe_allow_html=True)
 
-# --- DICT DE ESTILOS ---
 ESTILOS = {
     "ANIME BATTLE AESTHETIC": "High-Octane Anime Battle aesthetic. Intense action frames, dramatic energy effects, sharp angles. Colors: electric blues, fiery reds.",
     "3D NEUMORPHISM AESTHETIC": "Tactile 3D Neumorphism. Ultra-soft UI elements, extruded shapes, realistic soft shadows, matte silicone finishes. Clean minimalist palette.",
@@ -171,7 +140,6 @@ ESTILOS = {
     "HYPERBOLD TYPOGRAPHY": "Hyperbold High-Contrast. Massive heavy typography, brutalist shapes. Strict Black & White with one neon accent. Urgent and impactful."
 }
 
-# --- AUTH API ---
 api_key = None
 if CHAVE_MESTRA:
     api_key = CHAVE_MESTRA
@@ -237,7 +205,6 @@ def initial_analysis(content_data, file_type):
     try:
         if file_type == "TEXT": c_part = types.Part.from_text(text=content_data)
         else: c_part = content_data
-        
         response = client.models.generate_content(
             model=MODELO_TEXTO_FIXO,
             contents=[types.Part.from_text(text=prompt), c_part]
@@ -246,7 +213,7 @@ def initial_analysis(content_data, file_type):
     except Exception as e:
         return "Conteúdo carregado."
 
-def create_final_prompt(content_data, file_type, mode, style_name, style_details, idioma, densidade, formato_selecionado):
+def create_final_prompt(content_data, file_type, mode, style_name, style_details, idioma, densidade, formato_selecionado, colorize=False):
     instrucao_densidade = ""
     if densidade == "Conciso": instrucao_densidade = "Use MINIMAL TEXT. High visual impact."
     elif densidade == "Detalhado (BETA)": instrucao_densidade = "Use HIGH TEXT DENSITY."
@@ -259,6 +226,13 @@ def create_final_prompt(content_data, file_type, mode, style_name, style_details
         model_input.append(content_data)
         
         if "RESTAURAR" in mode:
+            # Lógica Condicional de Cor
+            color_instruction = ""
+            if colorize:
+                color_instruction = "COLORIZATION COMMAND: You MUST realistically COLORIZE this image. If it is Black & White or Sepia, apply lifelike, historically accurate, and natural colors to skin, clothing, and environment. The final output must be in full color."
+            else:
+                color_instruction = "COLOR PRESERVATION COMMAND: STRICTLY PRESERVE the original color palette. If the input image is Black & White, Sepia, or Monochromatic, the output MUST REMAIN exactly Black & White, Sepia, or Monochromatic. DO NOT add artificial colors."
+
             logic_instruction = f"""
             TASK: RESTORATION AND PRESERVATION.
             Ultra-premium professional image enhancement.
@@ -268,16 +242,16 @@ def create_final_prompt(content_data, file_type, mode, style_name, style_details
 
             MICRO-DETAIL RECOVERY:
             - Sharp facial features
-            - Natural skin texture
-            - Visible pores
+            - Natural skin texture and visible pores
             - Realistic hair strands
             - Crystalline eyes
-            - Clean and refined edges
+            - Remove all physical damage, scratches, tears, dust spots, and stains.
 
-            High-contrast clarity, intense depth, and balanced cinematic lighting. Poster-level realism with dramatic yet accurate details.
+            {color_instruction}
+
+            High-contrast clarity, intense depth, and balanced cinematic lighting. Poster-level realism.
             8K resolution output, ProRes quality, studio-level sharpness.
-            Only photorealistic textures. Only improvements faithful to the original source.
-            Keep everything exactly the same, just improve the quality.
+            Keep everything exactly the same structurally, just improve the quality.
 
             CRITICAL FORMAT INSTRUCTION:
             The requested format is {formato_selecionado}. If the input image is smaller or has a different aspect ratio, seamlessly EXTEND the background (outpainting) to fill the frame without stretching the subject.
@@ -335,7 +309,6 @@ def generate_image_pixels(prompt_text, aspect_ratio, reference_image=None):
         generation_contents.append(reference_image)
 
     try:
-        # PINTOR: GERAÇÃO DE PIXELS
         response = client.models.generate_content(
             model=MODELO_IMAGEM_FIXO,
             contents=generation_contents,
@@ -357,18 +330,18 @@ def show_full_image(image_bytes, token_info):
     img = Image.open(io.BytesIO(image_bytes))
     st.image(img, use_container_width=True)
     ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    filename = f"helios-v6-{ts}.png"
+    filename = f"helios-v7-{ts}.png"
     c1, c2 = st.columns(2)
     with c1: st.download_button("⬇️ BAIXAR ARQUIVO", data=image_bytes, file_name=filename, mime="image/png", type="primary", use_container_width=True)
     with c2: 
         if token_info: st.markdown(f"<div class='token-box'>💎 CUSTO: {token_info.prompt_token_count} in / {token_info.candidates_token_count} out</div>", unsafe_allow_html=True)
 
-# --- UI PRINCIPAL (APÓS LOGIN) ---
-st.title("🟡 HELIOS // UNIVERSAL v6.1")
+# --- UI PRINCIPAL ---
+st.title("🟡 HELIOS // UNIVERSAL v7.0")
 
 st.markdown(f"""
 <div class="instruction-box">
-    <strong>📘 MANUAL DE OPERAÇÕES v6.1 (SECURE):</strong>
+    <strong>📘 MANUAL DE OPERAÇÕES v7.0 (SECURE):</strong>
     <ul>
         <li><strong>1. Input Universal:</strong> Suba seu arquivo de texto (PDF/DOC/TXT) ou imagem (JPG/PNG). O sistema entende o que é.</li>
         <li><strong>2. Prompts de Texto:</strong> Pode subir arquivos contendo prompts de imagem OU artigos completos para resumo.</li>
@@ -376,7 +349,7 @@ st.markdown(f"""
             <ul>
                 <li><em>Re-Imagine:</em> Aplica filtro/estilo sobre a foto.</li>
                 <li><em>Infográfico:</em> Cria dados explicativos sobre o objeto.</li>
-                <li><em>Restaurar:</em> Recupera fotos em detalhes Ultra 8K e completa bordas.</li>
+                <li><em>Restaurar:</em> Recupera fotos em detalhes Ultra 8K, completa bordas e permite Colorização inteligente.</li>
             </ul>
         </li>
         <li style="color: #00FF00; font-weight: bold; margin-top: 5px;">5. DESTAQUE: Envie seu currículo e visualize a jornada da sua carreira em uma imagem épica!</li>
@@ -427,6 +400,7 @@ with col1:
     st.subheader(">> 2. CONFIGURAÇÃO")
     modo_imagem = "APLICAR ESTILO VISUAL (RE-IMAGINE)"
     is_restoring = False
+    colorizar_restauracao = False # Variável para controlar a colorização
     
     if st.session_state.file_type_detected == "IMAGE":
         st.markdown("**MODO DE OPERAÇÃO DA IMAGEM**")
@@ -445,6 +419,8 @@ with col1:
         if "RESTAURAR" in modo_imagem:
             is_restoring = True
             st.caption("ℹ️ Restaura em Qualidade Ultra-Premium 8K, preservando 100% da identidade original.")
+            # CHECKBOX DE COLORIZAÇÃO EXCLUSIVO PARA O MODO RESTAURAR
+            colorizar_restauracao = st.checkbox("🎨 Colorizar foto (Adicionar cores realistas a fotos P&B)", value=False, key=f"color_{reset_k}")
         elif "Explicativo" in modo_imagem:
             st.caption("ℹ️ Identifica o objeto/prato e cria um infográfico com dados.")
         else:
@@ -474,7 +450,8 @@ with col1:
                         ESTILOS[estilo], 
                         lang, 
                         dens,
-                        fmt
+                        fmt,
+                        colorizar_restauracao # Passa a decisão do usuário
                     )
                     if final_prompt:
                         prompt_w_style = final_prompt
