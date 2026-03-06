@@ -76,36 +76,34 @@ if "logged_in" not in st.session_state:
 # SE NÃO ESTIVER LOGADO, MOSTRA A TELA DE LOGIN E PARA TUDO
 if not st.session_state.logged_in:
     
-    # Centralização Visual
     col_spacer1, col_login, col_spacer2 = st.columns([1, 2, 1])
     
     with col_login:
-        st.markdown("<br><br><br>", unsafe_allow_html=True) # Espaço topo
+        st.markdown("<br><br><br>", unsafe_allow_html=True)
         st.title("🔒 ACESSO RESTRITO")
         st.markdown("---")
         
         senha_input = st.text_input("DIGITE A SENHA DE SEGURANÇA", type="password")
         
         if st.button("ENTRAR NO SISTEMA", type="primary", use_container_width=True):
-            # Verifica se a senha existe nos secrets e se bate
             if "APP_PASSWORD" in st.secrets and senha_input == st.secrets["APP_PASSWORD"]:
                 st.session_state.logged_in = True
-                st.rerun() # Recarrega a página para entrar no app
+                st.rerun()
             else:
                 st.error("⛔ ACESSO NEGADO: SENHA INCORRETA")
     
-    st.stop() # IMPORTANTE: Para a execução do script aqui se não logar
+    st.stop()
 
 # ==============================================================================
-# DAQUI PARA BAIXO É O CÓDIGO DO HELIOS v5.9 (SÓ CARREGA SE LOGADO)
+# HELIOS v6.1 CORE (SÓ CARREGA SE LOGADO)
 # ==============================================================================
 
 # --- ÁREA DE SEGURANÇA INTERNA ---
 CHAVE_MESTRA = None 
 
 # --- MODELOS ---
-MODELO_IMAGEM_FIXO = "gemini-3-pro-image-preview" 
-MODELO_TEXTO_FIXO = "gemini-2.0-flash" 
+MODELO_IMAGEM_FIXO = "gemini-3-pro-image-preview" # Nano Banana Pro 2 (Pintor)
+MODELO_TEXTO_FIXO = "gemini-2.0-flash" # Flash Stable (Cérebro Lógico)
 
 # --- ESTADO ---
 keys_to_init = [
@@ -263,13 +261,26 @@ def create_final_prompt(content_data, file_type, mode, style_name, style_details
         if "RESTAURAR" in mode:
             logic_instruction = f"""
             TASK: RESTORATION AND PRESERVATION.
-            Restore this damaged or aged photograph to its original quality.
-            
-            1. REPAIR: Remove scratches, tears, creases, dust spots, and stains. 
-            2. COLORIZATION: If the source image is Black & White or Sepia, you MUST COLORIZE it using realistic colors appropriate for the era, skin tones, and materials. If it is already colored, correct fading.
-            3. CLARITY: Enhance sharpness by reconstructing blurry details based on context.
-            4. PRESERVATION: Maintain original composition, poses, and expressions exactly.
-            5. OUTPAINTING: The requested format is {formato_selecionado}. If the image is smaller/different ratio, extend the background seamlessly to fill the frame.
+            Ultra-premium professional image enhancement.
+            Transform the uploaded, low-quality, and blurry image into cinematic quality with extreme detailing.
+            Preserve 100% of the original identity, facial structure, expression, pose, clothing, accessories, background, framing, and composition.
+            DO NOT alter, redraw, replace, or add anything.
+
+            MICRO-DETAIL RECOVERY:
+            - Sharp facial features
+            - Natural skin texture
+            - Visible pores
+            - Realistic hair strands
+            - Crystalline eyes
+            - Clean and refined edges
+
+            High-contrast clarity, intense depth, and balanced cinematic lighting. Poster-level realism with dramatic yet accurate details.
+            8K resolution output, ProRes quality, studio-level sharpness.
+            Only photorealistic textures. Only improvements faithful to the original source.
+            Keep everything exactly the same, just improve the quality.
+
+            CRITICAL FORMAT INSTRUCTION:
+            The requested format is {formato_selecionado}. If the input image is smaller or has a different aspect ratio, seamlessly EXTEND the background (outpainting) to fill the frame without stretching the subject.
             """
         
         elif "APLICAR ESTILO" in mode:
@@ -324,6 +335,7 @@ def generate_image_pixels(prompt_text, aspect_ratio, reference_image=None):
         generation_contents.append(reference_image)
 
     try:
+        # PINTOR: GERAÇÃO DE PIXELS
         response = client.models.generate_content(
             model=MODELO_IMAGEM_FIXO,
             contents=generation_contents,
@@ -352,11 +364,11 @@ def show_full_image(image_bytes, token_info):
         if token_info: st.markdown(f"<div class='token-box'>💎 CUSTO: {token_info.prompt_token_count} in / {token_info.candidates_token_count} out</div>", unsafe_allow_html=True)
 
 # --- UI PRINCIPAL (APÓS LOGIN) ---
-st.title("🟡 HELIOS // UNIVERSAL v6.0")
+st.title("🟡 HELIOS // UNIVERSAL v6.1")
 
 st.markdown(f"""
 <div class="instruction-box">
-    <strong>📘 MANUAL DE OPERAÇÕES v6.0 (SECURE):</strong>
+    <strong>📘 MANUAL DE OPERAÇÕES v6.1 (SECURE):</strong>
     <ul>
         <li><strong>1. Input Universal:</strong> Suba seu arquivo de texto (PDF/DOC/TXT) ou imagem (JPG/PNG). O sistema entende o que é.</li>
         <li><strong>2. Prompts de Texto:</strong> Pode subir arquivos contendo prompts de imagem OU artigos completos para resumo.</li>
@@ -364,7 +376,7 @@ st.markdown(f"""
             <ul>
                 <li><em>Re-Imagine:</em> Aplica filtro/estilo sobre a foto.</li>
                 <li><em>Infográfico:</em> Cria dados explicativos sobre o objeto.</li>
-                <li><em>Restaurar:</em> Recupera fotos, colore (se P&B) e completa bordas.</li>
+                <li><em>Restaurar:</em> Recupera fotos em detalhes Ultra 8K e completa bordas.</li>
             </ul>
         </li>
         <li style="color: #00FF00; font-weight: bold; margin-top: 5px;">5. DESTAQUE: Envie seu currículo e visualize a jornada da sua carreira em uma imagem épica!</li>
@@ -432,7 +444,7 @@ with col1:
         
         if "RESTAURAR" in modo_imagem:
             is_restoring = True
-            st.caption("ℹ️ Restaura danos, colore (se P&B) e expande o cenário (Outpainting).")
+            st.caption("ℹ️ Restaura em Qualidade Ultra-Premium 8K, preservando 100% da identidade original.")
         elif "Explicativo" in modo_imagem:
             st.caption("ℹ️ Identifica o objeto/prato e cria um infográfico com dados.")
         else:
