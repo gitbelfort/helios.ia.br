@@ -16,83 +16,203 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# --- ESTILOS GLOBAIS (TRON THEME E CORREÇÃO DE BOTÕES) ---
+# --- ESTILOS GLOBAIS (TRON THEME E BLINDAGEM DE BOTÕES) ---
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
     
-    .stApp { background-color: #000000; color: #FFD700; font-family: 'Share Tech Mono', monospace; }
+    .stApp { 
+        background-color: #000000; 
+        color: #FFD700; 
+        font-family: 'Share Tech Mono', monospace; 
+    }
+    
     [data-testid="stSidebar"] { display: none; }
     
-    h1, h2, h3, p, label, span, div, li { color: #FFD700 !important; font-family: 'Share Tech Mono', monospace !important; }
-    .stTextInput, .stSelectbox, .stFileUploader, .stRadio, .stCheckbox, .stTextArea { color: #FFD700; }
-    .stSelectbox > div > div, .stTextArea > div > textarea { background-color: #111; color: #FFD700; border: 1px solid #FFD700; }
+    h1, h2, h3, p, label, span, div, li { 
+        color: #FFD700 !important; 
+        font-family: 'Share Tech Mono', monospace !important; 
+    }
+    
+    .stTextInput, .stSelectbox, .stFileUploader, .stRadio, .stCheckbox, .stTextArea { 
+        color: #FFD700; 
+    }
+    
+    .stSelectbox > div > div, .stTextArea > div > textarea { 
+        background-color: #111; 
+        color: #FFD700; 
+        border: 1px solid #FFD700; 
+    }
     
     /* Input de Senha Centralizado */
     .stTextInput > div > div > input {
-        background-color: #111; color: #00FF00; border: 1px solid #00FF00; text-align: center; font-size: 1.5em;
+        background-color: #111; 
+        color: #00FF00; 
+        border: 1px solid #00FF00; 
+        text-align: center; 
+        font-size: 1.5em;
     }
 
-    /* BOTÃO SECUNDÁRIO (AMARELO) - Correção Definitiva de Focus/Active */
+    /* =========================================
+       BOTÃO SECUNDÁRIO (AMARELO) - Correção Master
+       ========================================= */
     button[kind="secondary"] { 
         background-color: #000000 !important; 
         border: 2px solid #FFD700 !important; 
-        border-radius: 0px; transition: 0.3s; 
+        border-radius: 0px; 
+        transition: 0.3s; 
     }
-    button[kind="secondary"] p {
+    /* Força a cor do texto do botão e de todos os filhos (div, p, span) */
+    button[kind="secondary"], button[kind="secondary"] * {
         color: #FFD700 !important; 
-        font-weight: bold; font-size: 1.1em; text-transform: uppercase;
+        font-weight: bold; 
+        font-size: 1.1em; 
+        text-transform: uppercase;
     }
-    button[kind="secondary"]:hover, button[kind="secondary"]:focus, button[kind="secondary"]:active { 
-        box-shadow: 0 0 20px #FFD700 !important; background-color: #FFD700 !important; border-color: #FFD700 !important;
+    /* Comportamento Hover/Active */
+    button[kind="secondary"]:hover, 
+    button[kind="secondary"]:focus, 
+    button[kind="secondary"]:active { 
+        box-shadow: 0 0 20px #FFD700 !important; 
+        background-color: #FFD700 !important; 
+        border-color: #FFD700 !important;
     }
-    button[kind="secondary"]:hover p, button[kind="secondary"]:focus p, button[kind="secondary"]:active p {
-        color: #000000 !important; /* Texto fica PRETO ao clicar para não sumir no fundo amarelo */
+    /* O texto VAI ficar PRETO quando o fundo ficar amarelo */
+    button[kind="secondary"]:hover, 
+    button[kind="secondary"]:focus, 
+    button[kind="secondary"]:active,
+    button[kind="secondary"]:hover *, 
+    button[kind="secondary"]:focus *, 
+    button[kind="secondary"]:active * {
+        color: #000000 !important; 
     }
 
-    /* BOTÃO PRIMÁRIO (VERDE) - Correção Definitiva de Focus/Active */
+    /* =========================================
+       BOTÃO PRIMÁRIO (VERDE) - Correção Master
+       ========================================= */
     button[kind="primary"] { 
         background-color: #000000 !important; 
         border: 2px solid #00FF00 !important; 
-        border-radius: 0px; transition: 0.3s; 
+        border-radius: 0px; 
+        transition: 0.3s; 
     }
-    button[kind="primary"] p {
+    /* Força a cor do texto do botão e de todos os filhos (div, p, span) */
+    button[kind="primary"], button[kind="primary"] * {
         color: #00FF00 !important; 
-        font-weight: bold; font-size: 1.1em; text-transform: uppercase;
+        font-weight: bold; 
+        font-size: 1.1em; 
+        text-transform: uppercase;
     }
-    button[kind="primary"]:hover, button[kind="primary"]:focus, button[kind="primary"]:active { 
-        box-shadow: 0 0 20px #00FF00 !important; background-color: #00FF00 !important; border-color: #00FF00 !important;
+    /* Comportamento Hover/Active */
+    button[kind="primary"]:hover, 
+    button[kind="primary"]:focus, 
+    button[kind="primary"]:active { 
+        box-shadow: 0 0 20px #00FF00 !important; 
+        background-color: #00FF00 !important; 
+        border-color: #00FF00 !important;
     }
-    button[kind="primary"]:hover p, button[kind="primary"]:focus p, button[kind="primary"]:active p {
-        color: #000000 !important; /* Texto fica PRETO ao clicar para não sumir no fundo verde */
+    /* O texto VAI ficar PRETO quando o fundo ficar verde */
+    button[kind="primary"]:hover, 
+    button[kind="primary"]:focus, 
+    button[kind="primary"]:active,
+    button[kind="primary"]:hover *, 
+    button[kind="primary"]:focus *, 
+    button[kind="primary"]:active * {
+        color: #000000 !important; 
     }
     
-    [data-testid='stFileUploader'] { border: 1px dashed #FFD700; padding: 20px; background-color: #050505; }
-    
-    .analysis-box {
-        border: 1px solid #333; background-color: #111; padding: 15px; margin-top: 10px;
-        border-left: 5px solid #00FF00; font-size: 0.9em; color: #EEE !important;
-    }
-    .analysis-title { color: #00FF00 !important; font-weight: bold; margin-bottom: 5px; }
-    
-    .instruction-box {
-        border: 1px solid #FFD700; background-color: #0a0a0a; padding: 15px; margin-bottom: 25px; border-left: 8px solid #FFD700;
+    /* Layouts e Caixas de Texto */
+    [data-testid='stFileUploader'] { 
+        border: 1px dashed #FFD700; 
+        padding: 20px; 
+        background-color: #050505; 
     }
     
-    .token-box { font-size: 0.8em; color: #888 !important; margin-top: 10px; border-top: 1px solid #333; padding-top: 5px; }
+    .analysis-box { 
+        border: 1px solid #333; 
+        background-color: #111; 
+        padding: 15px; 
+        margin-top: 10px; 
+        border-left: 5px solid #00FF00; 
+        font-size: 0.9em; 
+        color: #EEE !important; 
+    }
+    .analysis-title { 
+        color: #00FF00 !important; 
+        font-weight: bold; 
+        margin-bottom: 5px; 
+    }
     
-    .privacy-text { text-align: center; color: #666 !important; font-size: 0.7em; margin-top: 15px; border-top: 1px dashed #333; padding-top: 10px; line-height: 1.4; }
+    .instruction-box { 
+        border: 1px solid #FFD700; 
+        background-color: #0a0a0a; 
+        padding: 15px; 
+        margin-bottom: 25px; 
+        border-left: 8px solid #FFD700; 
+    }
     
-    .footer { position: fixed; left: 0; bottom: 0; width: 100%; background-color: #000000; color: #00FF00 !important; text-align: center; padding: 10px; font-size: 0.9em; border-top: 1px solid #222; z-index: 999; font-family: 'Share Tech Mono', monospace; letter-spacing: 2px; }
+    .token-box { 
+        font-size: 0.8em; 
+        color: #888 !important; 
+        margin-top: 10px; 
+        border-top: 1px solid #333; 
+        padding-top: 5px; 
+    }
     
-    div[data-testid="stDialog"] { background-color: #000000; border: 2px solid #FFD700; }
+    .privacy-text { 
+        text-align: center; 
+        color: #666 !important; 
+        font-size: 0.7em; 
+        margin-top: 15px; 
+        border-top: 1px dashed #333; 
+        padding-top: 10px; 
+        line-height: 1.4; 
+    }
     
-    .stSelectbox[aria-disabled="true"] > div > div { background-color: #222 !important; color: #555 !important; border-color: #333 !important; opacity: 0.6; }
-    header {visibility: hidden;}
+    .footer { 
+        position: fixed; 
+        left: 0; 
+        bottom: 0; 
+        width: 100%; 
+        background-color: #000000; 
+        color: #00FF00 !important; 
+        text-align: center; 
+        padding: 10px; 
+        font-size: 0.9em; 
+        border-top: 1px solid #222; 
+        z-index: 999; 
+        font-family: 'Share Tech Mono', monospace; 
+        letter-spacing: 2px; 
+    }
     
+    div[data-testid="stDialog"] { 
+        background-color: #000000; 
+        border: 2px solid #FFD700; 
+    }
+    
+    .stSelectbox[aria-disabled="true"] > div > div { 
+        background-color: #222 !important; 
+        color: #555 !important; 
+        border-color: #333 !important; 
+        opacity: 0.6; 
+    }
+    
+    header { visibility: hidden; }
+    
+    /* Customização das Tabs */
     .stTabs [data-baseweb="tab-list"] { gap: 10px; }
-    .stTabs [data-baseweb="tab"] { background-color: #111; border: 1px solid #FFD700; border-radius: 0px; color: #FFD700; padding: 10px 20px; }
-    .stTabs [aria-selected="true"] { background-color: #FFD700; color: #000 !important; font-weight: bold; }
+    .stTabs [data-baseweb="tab"] { 
+        background-color: #111; 
+        border: 1px solid #FFD700; 
+        border-radius: 0px; 
+        color: #FFD700; 
+        padding: 10px 20px; 
+    }
+    .stTabs [aria-selected="true"] { 
+        background-color: #FFD700; 
+        color: #000 !important; 
+        font-weight: bold; 
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -116,14 +236,14 @@ if not st.session_state.logged_in:
     st.stop()
 
 # ==============================================================================
-# HELIOS v8.2 CORE 
+# HELIOS v8.3 CORE 
 # ==============================================================================
 
 CHAVE_MESTRA = None 
 MODELO_IMAGEM_FIXO = "gemini-3-pro-image-preview" 
 MODELO_TEXTO_FIXO = "gemini-2.0-flash" 
 
-# Base de Conhecimento do Cérebro
+# --- BASE DE CONHECIMENTO DO ESTÚDIO ---
 KNOWLEDGE_BASE = """
     CINEMATOGRAPHY & PHOTOGRAPHY RULES:
     - Shots: Aerial shot, Close-up (emotions), Deep focus, Over-the-shoulder, Point-of-view, Two shot.
@@ -147,12 +267,22 @@ ESTILOS = {
     "HYPERBOLD TYPOGRAPHY": "Hyperbold High-Contrast. Massive heavy typography, brutalist shapes. Strict Black & White with one neon accent. Urgent and impactful."
 }
 
+# --- INICIALIZAÇÃO DE ESTADOS ---
 keys_to_init = [
-    'last_image_bytes', 'last_token_usage', 'reset_trigger', 
-    'analyzed_content', 'file_type_detected', 'last_uploaded_file_id',
-    'security_check_passed', 'clean_prompt_content', 'original_image_part',
-    'generated_prompt_img', 'generated_prompt_vid', 'generated_script'
+    'last_image_bytes', 
+    'last_token_usage', 
+    'reset_trigger', 
+    'analyzed_content', 
+    'file_type_detected', 
+    'last_uploaded_file_id',
+    'security_check_passed', 
+    'clean_prompt_content', 
+    'original_image_part',
+    'generated_prompt_img', 
+    'generated_prompt_vid', 
+    'generated_script'
 ]
+
 for key in keys_to_init:
     if key not in st.session_state:
         st.session_state[key] = None if key != 'reset_trigger' else 0
@@ -163,6 +293,7 @@ def reset_all():
             st.session_state[key] = None
     st.session_state.reset_trigger += 1
 
+# --- AUTENTICAÇÃO DE API ---
 api_key = None
 if CHAVE_MESTRA:
     api_key = CHAVE_MESTRA
@@ -175,7 +306,7 @@ if not api_key:
 
 client = genai.Client(api_key=api_key, http_options={"api_version": "v1beta"})
 
-# --- FUNÇÕES DO NÚCLEO ---
+# --- FUNÇÕES DO NÚCLEO (LÓGICA E GERAÇÃO) ---
 
 def process_uploaded_file(uploaded_file):
     try:
@@ -186,15 +317,19 @@ def process_uploaded_file(uploaded_file):
         text_content = ""
         if uploaded_file.type == "application/pdf":
             reader = pypdf.PdfReader(uploaded_file)
-            if len(reader.pages) > 30: return "LIMIT_ERROR", "PDF excede 30 páginas."
-            for page in reader.pages: text_content += page.extract_text() + "\n"
+            if len(reader.pages) > 30: 
+                return "LIMIT_ERROR", "PDF excede 30 páginas."
+            for page in reader.pages: 
+                text_content += page.extract_text() + "\n"
         elif "wordprocessingml" in uploaded_file.type:
             doc = docx.Document(uploaded_file)
             text_content = "\n".join([p.text for p in doc.paragraphs])
         else:
             text_content = uploaded_file.read().decode("utf-8")
         
-        if len(text_content) > 100000: return "LIMIT_ERROR", "Texto excede 100k caracteres."
+        if len(text_content) > 100000: 
+            return "LIMIT_ERROR", "Texto excede 100k caracteres."
+            
         return text_content, "TEXT"
     except Exception as e:
         st.error(f"Erro de leitura: {e}")
@@ -214,11 +349,16 @@ def verify_text_safety(text_content):
     try:
         response = client.models.generate_content(
             model=MODELO_TEXTO_FIXO,
-            contents=[types.Part.from_text(text=security_prompt), types.Part.from_text(text=text_content[:20000])]
+            contents=[
+                types.Part.from_text(text=security_prompt), 
+                types.Part.from_text(text=text_content[:20000])
+            ]
         )
         result = response.text.strip()
-        if "BLOCKED" in result: return False, "Conteúdo bloqueado por segurança."
-        if "SAFE_CONTENT" in result: return True, text_content
+        if "BLOCKED" in result: 
+            return False, "Conteúdo bloqueado por segurança."
+        if "SAFE_CONTENT" in result: 
+            return True, text_content
         return True, result
     except Exception as e:
         return False, f"Erro no cérebro de segurança: {e}"
@@ -341,7 +481,6 @@ def generate_image_pixels(prompt_text, aspect_ratio, reference_image=None):
         st.error(f"Erro no Motor Visual: {e}")
         return None
 
-# --- FUNÇÕES DA FÁBRICA DE PROMPTS ---
 def factory_generate_prompt(task_type, user_request, extra_params=""):
     system_prompt = f"""
     ROLE: Elite Prompt Engineer & Film Director.
@@ -371,12 +510,12 @@ def factory_generate_prompt(task_type, user_request, extra_params=""):
 def show_full_image(image_bytes, token_info):
     img = Image.open(io.BytesIO(image_bytes))
     st.image(img, use_container_width=True)
+    
     ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     filename = f"helios-v8-{ts}.png"
     
     c1, c2 = st.columns(2)
     with c1: 
-        # Sem emoji
         st.download_button("BAIXAR ARQUIVO", data=image_bytes, file_name=filename, mime="image/png", type="primary", use_container_width=True)
     with c2: 
         if token_info: 
@@ -385,7 +524,7 @@ def show_full_image(image_bytes, token_info):
 # ==============================================================================
 # UI PRINCIPAL
 # ==============================================================================
-st.title("🟡 HELIOS // UNIVERSAL STUDIO v8.2")
+st.title("🟡 HELIOS // UNIVERSAL STUDIO v8.3")
 
 st.markdown(f"""
 <div class="instruction-box">
@@ -417,6 +556,7 @@ with col1:
     if uploaded_file:
         current_id = uploaded_file.file_id if hasattr(uploaded_file, 'file_id') else uploaded_file.name
         if current_id != st.session_state.last_uploaded_file_id:
+            
             st.session_state.analyzed_content = None
             st.session_state.file_type_detected = None
             st.session_state.last_image_bytes = None
@@ -444,6 +584,7 @@ with col1:
                         st.session_state.original_image_part = content_raw 
                         st.session_state.file_type_detected = "IMAGE"
                         st.session_state.analyzed_content = initial_analysis(content_raw, "IMAGE")
+                    
                     st.session_state.last_uploaded_file_id = current_id
 
         if st.session_state.analyzed_content and st.session_state.security_check_passed:
@@ -474,7 +615,14 @@ with col1:
         st.markdown("---")
 
     estilo = st.selectbox("ESTILO VISUAL", list(ESTILOS.keys()), key=f"st_{reset_k}", disabled=is_restoring)
-    formatos_disponiveis = ["1:1 (Quadrado)", "16:9 (Paisagem Widescreen)", "9:16 (Vertical/Stories)", "4:3 (Paisagem Clássica)", "3:4 (Retrato Clássico)"]
+    
+    formatos_disponiveis = [
+        "1:1 (Quadrado)", 
+        "16:9 (Paisagem Widescreen)", 
+        "9:16 (Vertical/Stories)", 
+        "4:3 (Paisagem Clássica)", 
+        "3:4 (Retrato Clássico)"
+    ]
     fmt = st.selectbox("FORMATO", formatos_disponiveis, key=f"fmt_{reset_k}")
     
     st.subheader(">> 3. CONTEÚDO")
@@ -483,19 +631,25 @@ with col1:
 
     st.markdown("---")
     
-    # BOTÕES PRINCIPAIS LADO A LADO
     b_col1, b_col2 = st.columns(2)
     with b_col1:
         pode_gerar = st.session_state.security_check_passed
-        # Sem emoji
         if st.button("GERAR IMAGEM", type="primary", use_container_width=True, disabled=not pode_gerar, key=f"gen_{reset_k}"):
             with st.spinner(">> RENDERIZANDO PIXELS..."):
                 safe_content = st.session_state.clean_prompt_content
                 if safe_content:
                     final_prompt, tokens = create_final_prompt(
-                        safe_content, st.session_state.file_type_detected, modo_imagem, 
-                        estilo, ESTILOS[estilo], lang, dens, fmt, colorizar_restauracao 
+                        safe_content, 
+                        st.session_state.file_type_detected, 
+                        modo_imagem, 
+                        estilo, 
+                        ESTILOS[estilo], 
+                        lang, 
+                        dens, 
+                        fmt, 
+                        colorizar_restauracao 
                     )
+                    
                     if final_prompt:
                         prompt_w_style = final_prompt if is_restoring else f"{final_prompt} Style Guidelines: {ESTILOS[estilo]}"
                         ref_img = st.session_state.original_image_part if st.session_state.file_type_detected == "IMAGE" else None
@@ -506,12 +660,10 @@ with col1:
                             st.session_state.last_token_usage = tokens
                             st.rerun()
     with b_col2:
-        # Sem emoji
         if st.button("LIMPAR TELA", type="secondary", use_container_width=True, key=f"clr_{reset_k}"):
             reset_all()
             st.rerun()
 
-    # DISCLAIMER DE PRIVACIDADE
     st.markdown("""
     <div class="privacy-text">
         <strong>PRIVACIDADE E RESPONSABILIDADE</strong><br>
@@ -525,11 +677,12 @@ with col1:
 with col2:
     st.subheader(">> 4. RESULTADO VISUAL")
     preview_placeholder = st.empty()
+    
     if st.session_state.last_image_bytes:
         img_preview = Image.open(io.BytesIO(st.session_state.last_image_bytes))
         preview_placeholder.image(img_preview, caption="PREVIEW", width=400)
         st.markdown("<br>", unsafe_allow_html=True)
-        # Sem emoji
+        
         if st.button("AMPLIAR OU BAIXAR", type="secondary", use_container_width=True, key=f"zoom_{reset_k}"):
             show_full_image(st.session_state.last_image_bytes, st.session_state.last_token_usage)
     else:
@@ -541,15 +694,13 @@ with col2:
 st.markdown("---")
 st.header("GERADOR DE PROMPTS AVANÇADOS (STUDIO FACTORY)")
 
-# Tabs limpas de emojis
 tab1, tab2, tab3 = st.tabs(["CRIAR PROMPT DE IMAGEM", "CRIAR PROMPT DE VÍDEO (VEO 3.1)", "CRIAR ROTEIRO DE FILME"])
 
 with tab1:
     st.markdown("**Descreva a imagem que você deseja criar. Nós faremos a engenharia de prompt perfeita.**")
     img_req = st.text_area("O que você quer gerar?", height=100, key=f"t1_{reset_k}")
     
-    # Sem emoji
-    if st.button("GERAR PROMPT DE IMAGEM", key=f"bt1_{reset_k}"):
+    if st.button("GERAR PROMPT DE IMAGEM", type="secondary", key=f"bt1_{reset_k}"):
         with st.spinner("Forjando o prompt fotográfico..."):
             task = "Create a single highly detailed English prompt for an Image Generation model (Nano Banana/Midjourney). Apply expert photography/cinematography terms."
             st.session_state.generated_prompt_img = factory_generate_prompt(task, img_req)
@@ -558,7 +709,6 @@ with tab1:
         st.markdown("### Seu Prompt Otimizado (Copie abaixo):")
         st.code(st.session_state.generated_prompt_img, language="markdown")
         
-        # Sem emoji
         if st.button("GERAR ESTA IMAGEM AGORA", type="primary", key=f"bt1_gen_{reset_k}"):
             with st.spinner(">> RENDERIZANDO PIXELS DIRETAMENTE DO PROMPT..."):
                 img_bytes = generate_image_pixels(st.session_state.generated_prompt_img, fmt)
@@ -570,8 +720,7 @@ with tab2:
     st.markdown("**Descreva a cena de vídeo. Vamos aplicar movimentos de câmera e iluminação cinemática.**")
     vid_req = st.text_area("O que acontece na cena?", height=100, key=f"t2_{reset_k}")
     
-    # Sem emoji
-    if st.button("GERAR PROMPT DE VÍDEO", key=f"bt2_{reset_k}"):
+    if st.button("GERAR PROMPT DE VÍDEO", type="secondary", key=f"bt2_{reset_k}"):
         with st.spinner("Dirigindo a cena para Veo 3.1..."):
             task = "Create a single highly detailed English prompt for a Video Generation model (Veo 3.1). Include camera movement (pan, tilt, tracking), lighting, and pacing. The scene lasts exactly 8 seconds."
             st.session_state.generated_prompt_vid = factory_generate_prompt(task, vid_req)
@@ -590,7 +739,6 @@ with tab3:
     with col_opt2:
         tipo_producao = st.radio("Método de Produção no Veo 3", ["Usar Imagem de Referência (Image-to-Video)", "Gerar Direto (Text-to-Video)"], key=f"rad_{reset_k}")
     
-    # Sem emoji
     if st.button("GERAR ROTEIRO COMPLETO", type="primary", key=f"bt3_{reset_k}"):
         with st.spinner("Escrevendo o Roteiro e Decupando as Cenas..."):
             extra = f"Number of scenes: {num_scenes}. Method: {tipo_producao}."
