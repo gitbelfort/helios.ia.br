@@ -92,6 +92,7 @@ except Exception as e:
 def rank_text_model(name: str):
     lname = name.lower()
     return (
+        "exp" not in lname and "preview" not in lname,  # prioriza versões estáveis
         "pro" in lname,
         "2.5" in lname,
         "2.0" in lname,
@@ -142,6 +143,15 @@ def get_available_image_models():
     except Exception:
         return []
 
+@st.cache_data(ttl=3600)
+def get_available_text_models():
+    try:
+        models = list(client.models.list())
+        text_models = [m.name.split('/')[-1] for m in models if "gemini" in m.name.lower()]
+        return sorted(set(text_models), key=rank_text_model, reverse=True)
+    except Exception:
+        return []
+
 # --- ESTADOS E LOGS ---
 keys_to_init = [
     'last_image_bytes', 'last_token_usage', 'reset_trigger', 
@@ -159,16 +169,29 @@ def reset_all():
 
 # --- ESCUDO ANTI-429 ---
 def generate_content_with_retry(model_name, contents, config=None, max_retries=4):
-    delay = 2
-    for attempt in range(max_retries):
-        try:
-            return client.models.generate_content(model=model_name, contents=contents, config=config)
-        except Exception as e:
-            if any(k in str(e).lower() for k in ["429", "quota", "exhausted", "limit"]):
-                if attempt == max_retries - 1: raise e
-                time.sleep(delay)
-                delay *= 2
-            else: raise e
+    fallback_text_models = [m for m in get_available_text_models() if m != model_name]
+    candidate_models = [model_name] + fallback_text_models
+
+    last_error = None
+    for candidate in candidate_models:
+        delay = 2
+        for attempt in range(max_retries):
+            try:
+                return client.models.generate_content(model=candidate, contents=contents, config=config)
+            except Exception as e:
+                last_error = e
+                error_txt = str(e).lower()
+                if any(k in error_txt for k in ["404", "not_found", "not found"]):
+                    # Modelo indisponível para este projeto/região: tenta próximo.
+                    break
+                if any(k in error_txt for k in ["429", "quota", "exhausted", "limit"]):
+                    if attempt == max_retries - 1:
+                        break
+                    time.sleep(delay)
+                    delay *= 2
+                    continue
+                raise e
+    raise last_error if last_error else RuntimeError("Falha ao gerar conteúdo.")
 
 # --- FUNÇÕES CORE ---
 def process_uploaded_file(uploaded_file):
