@@ -185,6 +185,86 @@ ESTILOS = {
     "HYPERBOLD TYPOGRAPHY": "Hyperbold High-Contrast. Massive heavy typography, brutalist shapes. Strict Black & White with one neon accent. Urgent and impactful."
 }
 
+
+RESTAURAR_PRO_PROMPT = """
+TITLE: Non-destructive restoration of a scanned family photo
+
+GOAL:
+Restore color accuracy, definition, and cleanliness while preserving 100% identity and anatomy of both subjects. DO NOT alter faces, expressions, eyes, mouth, nose, skin tone, facial hair, hairline, jawline, body proportions, pose, hands, or background composition. No beautification, no style transfer.
+
+PRIORITIES (highest → lowest):
+1) Identity preservation 2) Natural color and tone 3) Clean-up of scan artifacts 4) Gentle sharpness and detail recovery 5) Authentic film look (not “AI perfect”).
+
+HARD CONSTRAINTS:
+- identity_lock: true ; face_lock: 1.00 ; preserve_subjects: strict
+- identity_score >= 0.995 ; LPIPS <= 0.05 ; SSIM >= 0.95  (use as guidance)
+- no_face_swap ; no_repaint_faces ; no_relighting
+- no_body_reshape ; no_slimming ; no pose changes
+- no added/removed objects ; no background replacement
+- no heavy smoothing, no plastic skin, no makeup, no cartoonization
+- maintain non-sexual, documentary context; do not emphasize nudity
+- keep original framing and crop
+
+RESTORATION SEQUENCE (do in order):
+1) Denoise & dep dust: remove scanner noise, dust, scratches, and banding. Preserve micro-texture; avoid plastic look.
+2) Mild deblur / blind deconvolution: edge-aware, halo-free. target_sharpening ≈ low-medium.
+3) White balance & cast removal: neutralize aged paper cast; aim for realistic skin tones and a neutral wall.
+4) Color restore: modest saturation, expanded but natural gamut; retain soft contrast with good shadow latitude on torso/arms.
+5) Detail recovery: enhance fine hair strands and fabric/background texture. For faces: VERY SOFT sharpening only if artifact-free.
+6) Scanner glare mitigation: reduce specular sheen on background and skin WITHOUT flattening volumes; maintain 3D shape cues.
+7) Background cleanup: reduce blotches/vignettes; keep authentic “print of the era” feel.
+8) Grain management: preserve or reintroduce fine, organic film grain if needed to avoid plasticity.
+
+OUTPUT REQUIREMENTS:
+- Resolution: up to 8K long edge (≈ 7680 px) via restoration-aware upscale (not hallucinated detail).
+- Photographic MTF; NO halos/ringing; NO over-sharpen.
+- Smooth tonal ramps; avoid posterization/banding; correct color cast; sRGB color profile.
+- File: PNG or high-quality JPEG; no compression artifacts.
+
+IF MASKING/PROTECTION IS AVAILABLE:
+- Protect faces (ears/eyebrows/mustache/beard/hairline) and both subjects’ hands with tight masks; apply only minimal denoise and global color in these regions.
+- Apply stronger cleanup on background and non-facial skin areas, but respect natural skin texture.
+
+STYLE TARGET:
+“Faithfully restored archival photo; realistic, era-authentic; zero AI stylization.”
+
+NEGATIVE PROMPT / FORBIDDEN:
+face change; identity swap; repainting faces; re-rendered eyes; digital makeup; porcelain skin; strong smoothing; cartoon; HDR/overcontrast; high saturation; heavy vignette; halo sharpening; banding; plastic texture; teal/green/blue casts; artifacting; skinny/reshape; pose change; dramatic relight; cinematic grade.
+
+SUGGESTED PARAMETERS / HINT TOKENS (use what your UI supports):
+- guidance_scale: 2–3  # low to avoid invention
+- edit_strength / denoise: 0.25–0.35
+- color_fix: on ; tone_balance: neutral-warm
+- artifact_removal: medium ; detail_enhance: low
+- upscaler: "restoration/detail-preserving" (2× → 4× in 2 passes)
+- face_consistency / identity_preservation: high/max
+- sharpening_mode: "halo-free", "edge-aware"
+- glare_reduction: on ; "scanner_gloss mitigation"
+- "non-destructive", "no hallucination", "photographic fidelity"
+- "per-pixel identity lock", "semantic consistency high"
+- "structure-preserving smoothing", "texture-preserving denoise"
+- "blind deconvolution", "ZSSR/ESRGAN (restoration-safe)", "GFPGAN identity-lock (low strength)"
+- "film grain: fine, organic" ; grain_intensity: very_low
+- seed: lock if reproducibility is needed
+
+TWO-PASS TIP (if the tool supports step pipelines):
+Pass 1 → gentle cleanup + white balance + mild deblur (low strength).
+Pass 2 → restoration-aware upscale + micro-contrast + very soft face sharpening (only if artifact-free).
+
+QUALITY CHECK BEFORE SAVE:
+- Compare A/B with original at 200% zoom; verify faces and body geometry match exactly.
+"""
+
+def build_restaurar_pro_prompt(formato_selecionado: str):
+    return f"""
+Use the uploaded image as the only visual reference and perform a non-destructive archival photo restoration.
+Follow the exact restoration spec below with strict identity preservation and zero stylization.
+Keep the original framing and crop while respecting the requested output aspect ratio {formato_selecionado}. If needed, extend only the background minimally and naturally without altering subjects.
+Return a faithful photographic restoration with up to 8K long edge output.
+
+{RESTAURAR_PRO_PROMPT}
+""".strip()
+
 @st.cache_data(ttl=3600)
 def get_available_image_models():
     try:
@@ -294,6 +374,8 @@ def create_final_prompt(content_data, file_type, mode, style_name, style_details
 
     if file_type == "IMAGE":
         model_input.append(content_data)
+        if "RESTAURAR PRO" in mode:
+            return build_restaurar_pro_prompt(formato_selecionado), None
         if "RESTAURAR" in mode:
             col_cmd = (
                 "COLORIZATION COMMAND: You MUST realistically COLORIZE this image. If it is Black & White or Sepia, apply lifelike, historically accurate, and natural colors to skin, clothing, and environment. The final output must be in full color."
@@ -476,6 +558,27 @@ def generate_image_pixels(prompt_text, aspect_ratio, reference_image=None):
     )
     return None
 
+
+def upscale_image_bytes_if_needed(image_bytes, target_long_edge=7680):
+    """Upscale local de seguranca para saida ate 8K long edge quando necessario."""
+    try:
+        img = Image.open(io.BytesIO(image_bytes))
+        width, height = img.size
+        long_edge = max(width, height)
+        if long_edge >= target_long_edge:
+            return image_bytes
+
+        scale = target_long_edge / float(long_edge)
+        new_size = (max(1, int(round(width * scale))), max(1, int(round(height * scale))))
+        upscaled = img.resize(new_size, Image.LANCZOS)
+
+        output = io.BytesIO()
+        # Mantem PNG para evitar artefatos adicionais de compressao.
+        upscaled.save(output, format="PNG")
+        return output.getvalue()
+    except Exception:
+        return image_bytes
+
 # ==============================================================================
 # UI PRINCIPAL
 # ==============================================================================
@@ -485,7 +588,7 @@ st.markdown(f"""
 <div class="instruction-box">
     <strong>SISTEMA INTELIGENTE ATIVO:</strong><br>
     Região: <code>{LOCATION}</code> | Cérebro: <code>{MODELO_TEXTO_FIXO}</code> | Pintor obrigatório: <code>{MODELO_IMAGEM_FIXO}</code><br>
-    Imagem via Gemini Image / Nano Banana Pro ou Nano Banana 2. Sem fallback para Imagen.
+    Imagem via Gemini Image / Nano Banana Pro ou Nano Banana 2. Sem fallback para Imagen. Modos de restauração aplicam upscale final até 8K long edge.
 </div>
 """, unsafe_allow_html=True)
 
@@ -513,10 +616,11 @@ with col1:
             st.markdown(f"""<div class="analysis-box">✅ {st.session_state.analyzed_content}</div>""", unsafe_allow_html=True)
 
     st.subheader(">> 2. CONFIGURAÇÃO")
-    modo = st.selectbox("MODO", ["APLICAR ESTILO VISUAL", "CRIAR INFOGRÁFICO", "RESTAURAR FOTO"], key=f"mode_{reset_k}")
+    modo = st.selectbox("MODO", ["APLICAR ESTILO VISUAL", "CRIAR INFOGRÁFICO", "RESTAURAR FOTO", "RESTAURAR PRO"], key=f"mode_{reset_k}")
 
     col_cfg1, col_cfg2 = st.columns(2)
     is_restoring = "RESTAURAR" in modo
+    is_restore_pro = "RESTAURAR PRO" in modo
     with col_cfg1:
         estilo = st.selectbox("ESTILO VISUAL", list(ESTILOS.keys()), key=f"st_{reset_k}", disabled=is_restoring)
         idioma = st.selectbox("IDIOMA", ["Português (Brasil)", "Inglês"], key=f"lang_{reset_k}", disabled=is_restoring)
@@ -524,7 +628,9 @@ with col1:
         fmt = st.selectbox("FORMATO", ["16:9", "9:16", "1:1", "4:3"], key=f"fmt_{reset_k}")
         densidade = st.selectbox("DENSIDADE TEXTUAL", ["Padrão", "Conciso", "Detalhado"], key=f"dens_{reset_k}", disabled=is_restoring)
 
-    colorizar = st.checkbox("Colorizar", value=False, key=f"col_{reset_k}") if is_restoring else False
+    colorizar = st.checkbox("Colorizar", value=False, key=f"col_{reset_k}") if (is_restoring and not is_restore_pro) else False
+    if is_restore_pro:
+        st.caption("RESTAURAR PRO: restauração arquivística não-destrutiva com upscale final até 8K long edge.")
 
     b_col1, b_col2 = st.columns(2)
     with b_col1:
@@ -545,6 +651,8 @@ with col1:
                 if prompt:
                     img = generate_image_pixels(prompt, fmt, st.session_state.original_image_part)
                     if img:
+                        if is_restoring:
+                            img = upscale_image_bytes_if_needed(img, target_long_edge=7680)
                         st.session_state.last_image_bytes = img
                         st.session_state.last_token_usage = tokens
                         st.rerun()
