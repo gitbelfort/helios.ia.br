@@ -74,6 +74,7 @@ if not st.session_state.logged_in:
 # CONFIGURAÇÕES VERTEX AI
 PROJECT_ID = st.secrets["GCP_PROJECT_ID"]
 LOCATION = st.secrets.get("GCP_LOCATION", "global")
+IMAGE_FALLBACK_LOCATIONS = [loc.strip() for loc in st.secrets.get("GCP_IMAGE_FALLBACK_LOCATIONS", "us-central1,us-east5").split(",") if loc.strip()]
 
 # Autenticação
 creds_dict = json.loads(st.secrets["GCP_SERVICE_ACCOUNT_JSON"])
@@ -87,6 +88,14 @@ try:
     client = genai.Client(vertexai=True, project=PROJECT_ID, location=LOCATION, credentials=credenciais_oficiais)
 except Exception as e:
     st.error(f"Erro Crítico de Infraestrutura: {e}")
+
+def build_client_for_location(target_location: str):
+    return genai.Client(
+        vertexai=True,
+        project=PROJECT_ID,
+        location=target_location,
+        credentials=credenciais_oficiais
+    )
 
 # --- FUNÇÃO DE DESCOBERTA DINÂMICA DE MODELOS ---
 def rank_text_model(name: str):
@@ -138,6 +147,14 @@ MODELO_IMAGEM_FIXO = st.secrets.get("VERTEX_IMAGE_MODEL", _best_image)
 def get_available_image_models():
     try:
         models = list(client.models.list())
+        image_models = [m.name.split('/')[-1] for m in models if "imagen" in m.name.lower()]
+        return sorted(set(image_models), key=rank_image_model, reverse=True)
+    except Exception:
+        return []
+
+def get_available_image_models_for_client(target_client):
+    try:
+        models = list(target_client.models.list())
         image_models = [m.name.split('/')[-1] for m in models if "imagen" in m.name.lower()]
         return sorted(set(image_models), key=rank_image_model, reverse=True)
     except Exception:
@@ -249,37 +266,47 @@ def generate_image_pixels(prompt_text, aspect_ratio, reference_image=None):
     if "16:9" in aspect_ratio: ar = "16:9"
     elif "9:16" in aspect_ratio: ar = "9:16"
 
-    # Pipeline principal: endpoint nativo de geração de imagens (Imagen).
-    # Seleciona apenas modelos realmente disponíveis para o projeto/região atual.
-    available_image_models = get_available_image_models()
-    if available_image_models:
-        candidate_models = [MODELO_IMAGEM_FIXO] + [m for m in available_image_models if m != MODELO_IMAGEM_FIXO]
-    else:
-        candidate_models = [MODELO_IMAGEM_FIXO]
-
-    for model_name in candidate_models:
-        try:
-            response = client.models.generate_images(
-                model=model_name,
-                prompt=prompt_text,
-                config=types.GenerateImagesConfig(
-                    number_of_images=1,
-                    aspect_ratio=ar,
-                ),
-            )
-            if response.generated_images:
-                return response.generated_images[0].image.image_bytes
-        except Exception as e:
-            error_text = str(e).lower()
-            if any(k in error_text for k in ["429", "quota", "resource_exhausted", "not found", "unsupported"]):
-                # Tenta o próximo modelo quando faltar cota/incompatibilidade.
+    # Tenta na região principal e em regiões de fallback para imagem.
+    tried_locations = []
+    client_by_location = [(LOCATION, client)]
+    for fallback_loc in IMAGE_FALLBACK_LOCATIONS:
+        if fallback_loc != LOCATION:
+            try:
+                client_by_location.append((fallback_loc, build_client_for_location(fallback_loc)))
+            except Exception:
                 continue
-            st.error(f"Erro Motor Visual ({model_name}): {e}")
-            return None
+
+    for loc, loc_client in client_by_location:
+        tried_locations.append(loc)
+        available_image_models = get_available_image_models_for_client(loc_client)
+        if available_image_models:
+            candidate_models = [MODELO_IMAGEM_FIXO] + [m for m in available_image_models if m != MODELO_IMAGEM_FIXO]
+        else:
+            candidate_models = [MODELO_IMAGEM_FIXO]
+
+        for model_name in candidate_models:
+            try:
+                response = loc_client.models.generate_images(
+                    model=model_name,
+                    prompt=prompt_text,
+                    config=types.GenerateImagesConfig(
+                        number_of_images=1,
+                        aspect_ratio=ar,
+                    ),
+                )
+                if response.generated_images:
+                    return response.generated_images[0].image.image_bytes
+            except Exception as e:
+                error_text = str(e).lower()
+                if any(k in error_text for k in ["429", "quota", "resource_exhausted", "not found", "unsupported"]):
+                    continue
+                st.error(f"Erro Motor Visual ({model_name} @ {loc}): {e}")
+                return None
 
     st.error(
         "Erro Motor Visual: nenhum modelo Imagen disponível/compatível no projeto-região atual "
-        f"({LOCATION}) ou quota excedida. Ajuste GCP_LOCATION, habilite modelo Imagen no projeto "
+        f"({LOCATION}) ou quota excedida. Regiões tentadas: {', '.join(tried_locations)}. "
+        "Ajuste GCP_LOCATION/GCP_IMAGE_FALLBACK_LOCATIONS, habilite modelo Imagen no projeto "
         "ou solicite aumento de quota."
     )
     return None
