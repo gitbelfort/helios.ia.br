@@ -73,7 +73,7 @@ if not st.session_state.logged_in:
 
 # CONFIGURAÇÕES VERTEX AI
 PROJECT_ID = st.secrets["GCP_PROJECT_ID"]
-LOCATION = "us-central1"
+LOCATION = st.secrets.get("GCP_LOCATION", "global")
 
 # Autenticação
 creds_dict = json.loads(st.secrets["GCP_SERVICE_ACCOUNT_JSON"])
@@ -89,6 +89,25 @@ except Exception as e:
     st.error(f"Erro Crítico de Infraestrutura: {e}")
 
 # --- FUNÇÃO DE DESCOBERTA DINÂMICA DE MODELOS ---
+def rank_text_model(name: str):
+    lname = name.lower()
+    return (
+        "pro" in lname,
+        "2.5" in lname,
+        "2.0" in lname,
+        "flash" not in lname,
+    )
+
+def rank_image_model(name: str):
+    lname = name.lower()
+    return (
+        "pro" in lname,   # prioridade máxima quando existir variação "pro"
+        "imagen-4" in lname,
+        "imagen-3" in lname,
+        "generate" in lname,
+        "fast" not in lname,
+    )
+
 @st.cache_data(ttl=3600) # Atualiza a lista a cada 1 hora
 def get_best_models():
     """Varre os modelos disponíveis e seleciona os mais potentes por categoria."""
@@ -97,24 +116,31 @@ def get_best_models():
         
         # Filtros para Texto (Gemini)
         text_models = [m.name for m in models if "gemini" in m.name.lower()]
-        # Prioridade: 2.0 > 1.5 | pro > flash
-        text_models.sort(key=lambda x: ("2.0" in x, "pro" in x, "1.5" in x), reverse=True)
+        text_models.sort(key=rank_text_model, reverse=True)
         best_text = text_models[0] if text_models else "gemini-2.0-flash-exp"
         
         # Filtros para Imagem (Imagen)
         image_models = [m.name for m in models if "imagen" in m.name.lower()]
-        # Prioridade: 3.0 > generate > fast
-        image_models.sort(key=lambda x: ("3.0" in x, "generate" in x, "fast" in x), reverse=True)
+        image_models.sort(key=rank_image_model, reverse=True)
         best_image = image_models[0] if image_models else "imagen-3.0-generate-001"
         
         return best_text.split('/')[-1], best_image.split('/')[-1]
     except Exception:
         return "gemini-2.0-flash-exp", "imagen-3.0-generate-001"
 
-# Atribuição Dinâmica
-# MODELO_TEXTO_FIXO, MODELO_IMAGEM_FIXO = get_best_models()
-MODELO_TEXTO_FIXO = "gemini-2.5-pro"
-MODELO_IMAGEM_FIXO = "imagen-3.0-generate-002"
+# Atribuição Dinâmica (com override opcional via secrets)
+_best_text, _best_image = get_best_models()
+MODELO_TEXTO_FIXO = st.secrets.get("VERTEX_TEXT_MODEL", _best_text)
+MODELO_IMAGEM_FIXO = st.secrets.get("VERTEX_IMAGE_MODEL", _best_image)
+
+@st.cache_data(ttl=3600)
+def get_available_image_models():
+    try:
+        models = list(client.models.list())
+        image_models = [m.name.split('/')[-1] for m in models if "imagen" in m.name.lower()]
+        return sorted(set(image_models), key=rank_image_model, reverse=True)
+    except Exception:
+        return []
 
 # --- ESTADOS E LOGS ---
 keys_to_init = [
@@ -199,18 +225,41 @@ def generate_image_pixels(prompt_text, aspect_ratio, reference_image=None):
     ar = "1:1"
     if "16:9" in aspect_ratio: ar = "16:9"
     elif "9:16" in aspect_ratio: ar = "9:16"
-    
-    contents = [types.Part.from_text(text=prompt_text)]
-    if reference_image: contents.append(reference_image)
-    config = types.GenerateContentConfig(response_modalities=["IMAGE"], image_config=types.ImageConfig(aspect_ratio=ar))
-    try:
-        response = generate_content_with_retry(model_name=MODELO_IMAGEM_FIXO, contents=contents, config=config)
-        for part in response.parts:
-            if part.inline_data: return part.inline_data.data
-        return None
-    except Exception as e:
-        st.error(f"Erro Motor Visual: {e}")
-        return None
+
+    # Pipeline principal: endpoint nativo de geração de imagens (Imagen).
+    # Seleciona apenas modelos realmente disponíveis para o projeto/região atual.
+    available_image_models = get_available_image_models()
+    if available_image_models:
+        candidate_models = [MODELO_IMAGEM_FIXO] + [m for m in available_image_models if m != MODELO_IMAGEM_FIXO]
+    else:
+        candidate_models = [MODELO_IMAGEM_FIXO]
+
+    for model_name in candidate_models:
+        try:
+            response = client.models.generate_images(
+                model=model_name,
+                prompt=prompt_text,
+                config=types.GenerateImagesConfig(
+                    number_of_images=1,
+                    aspect_ratio=ar,
+                ),
+            )
+            if response.generated_images:
+                return response.generated_images[0].image.image_bytes
+        except Exception as e:
+            error_text = str(e).lower()
+            if any(k in error_text for k in ["429", "quota", "resource_exhausted", "not found", "unsupported"]):
+                # Tenta o próximo modelo quando faltar cota/incompatibilidade.
+                continue
+            st.error(f"Erro Motor Visual ({model_name}): {e}")
+            return None
+
+    st.error(
+        "Erro Motor Visual: nenhum modelo Imagen disponível/compatível no projeto-região atual "
+        f"({LOCATION}) ou quota excedida. Ajuste GCP_LOCATION, habilite modelo Imagen no projeto "
+        "ou solicite aumento de quota."
+    )
+    return None
 
 # ==============================================================================
 # UI PRINCIPAL
@@ -220,8 +269,8 @@ st.title("🟡 HELIOS // DYNAMIC STUDIO v9.6")
 st.markdown(f"""
 <div class="instruction-box">
     <strong>SISTEMA INTELIGENTE ATIVO:</strong><br>
-    Cérebro: <code>{MODELO_TEXTO_FIXO}</code> | Pintor: <code>{MODELO_IMAGEM_FIXO}</code><br>
-    Cotas corporativas (us-central1) detectadas e vinculadas.
+    Região: <code>{LOCATION}</code> | Cérebro: <code>{MODELO_TEXTO_FIXO}</code> | Pintor: <code>{MODELO_IMAGEM_FIXO}</code><br>
+    Descoberta dinâmica de modelos e cotas ativa para a região configurada.
 </div>
 """, unsafe_allow_html=True)
 
