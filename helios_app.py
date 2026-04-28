@@ -111,11 +111,12 @@ def rank_text_model(name: str):
 def rank_image_model(name: str):
     lname = name.lower()
     return (
-        "pro" in lname,   # prioridade máxima quando existir variação "pro"
-        "imagen-4" in lname,
-        "imagen-3" in lname,
-        "generate" in lname,
-        "fast" not in lname,
+        "gemini-3-pro-image-preview" in lname,      # Nano Banana Pro
+        "gemini-3.1-flash-image-preview" in lname,  # Nano Banana 2
+        "gemini-2.5-flash-image" in lname,          # Nano Banana fallback
+        "pro" in lname,
+        "image" in lname,
+        "preview" not in lname,
     )
 
 @st.cache_data(ttl=3600) # Atualiza a lista a cada 1 hora
@@ -129,19 +130,37 @@ def get_best_models():
         text_models.sort(key=rank_text_model, reverse=True)
         best_text = text_models[0] if text_models else "gemini-2.0-flash-exp"
         
-        # Filtros para Imagem (Imagen)
-        image_models = [m.name for m in models if "imagen" in m.name.lower()]
+        # Imagem: obrigatoriamente familia Nano Banana (Gemini Image), nao Imagen.
+        image_models = [m.name for m in models if "gemini" in m.name.lower() and "image" in m.name.lower()]
         image_models.sort(key=rank_image_model, reverse=True)
-        best_image = image_models[0] if image_models else "imagen-3.0-generate-001"
+        best_image = image_models[0] if image_models else "gemini-3-pro-image-preview"
         
         return best_text.split('/')[-1], best_image.split('/')[-1]
     except Exception:
-        return "gemini-2.0-flash-exp", "imagen-3.0-generate-001"
+        return "gemini-2.0-flash-exp", "gemini-3-pro-image-preview"
 
 # Atribuição Dinâmica (com override opcional via secrets)
 _best_text, _best_image = get_best_models()
 MODELO_TEXTO_FIXO = st.secrets.get("VERTEX_TEXT_MODEL", _best_text)
-MODELO_IMAGEM_FIXO = st.secrets.get("VERTEX_IMAGE_MODEL", _best_image)
+# Obrigatorio: usar Nano Banana/Nano Banana Pro via Gemini Image.
+# Nano Banana Pro: gemini-3-pro-image-preview
+# Nano Banana 2: gemini-3.1-flash-image-preview
+# Nano Banana fallback: gemini-2.5-flash-image
+NANO_BANANA_MODELS = [
+    "gemini-3-pro-image-preview",
+    "gemini-3.1-flash-image-preview",
+    "gemini-2.5-flash-image",
+]
+MODELO_IMAGEM_FIXO = st.secrets.get("VERTEX_IMAGE_MODEL", "gemini-3-pro-image-preview")
+NANO_BANANA_FALLBACK_MODELS = [
+    m.strip() for m in st.secrets.get(
+        "VERTEX_IMAGE_FALLBACK_MODELS",
+        "gemini-3-pro-image-preview,gemini-3.1-flash-image-preview,gemini-2.5-flash-image"
+    ).split(",") if m.strip()
+]
+NANO_BANANA_LOCATIONS = [
+    loc.strip() for loc in st.secrets.get("GCP_NANO_BANANA_LOCATIONS", "global").split(",") if loc.strip()
+]
 
 
 # --- KNOWLEDGE BASE / PROMPTS AVANCADOS (RECUPERADO DO BACKUP) ---
@@ -170,7 +189,7 @@ ESTILOS = {
 def get_available_image_models():
     try:
         models = list(client.models.list())
-        image_models = [m.name.split('/')[-1] for m in models if "imagen" in m.name.lower()]
+        image_models = [m.name.split('/')[-1] for m in models if "gemini" in m.name.lower() and "image" in m.name.lower()]
         return sorted(set(image_models), key=rank_image_model, reverse=True)
     except Exception:
         return []
@@ -178,7 +197,7 @@ def get_available_image_models():
 def get_available_image_models_for_client(target_client):
     try:
         models = list(target_client.models.list())
-        image_models = [m.name.split('/')[-1] for m in models if "imagen" in m.name.lower()]
+        image_models = [m.name.split('/')[-1] for m in models if "gemini" in m.name.lower() and "image" in m.name.lower()]
         return sorted(set(image_models), key=rank_image_model, reverse=True)
     except Exception:
         return []
@@ -349,54 +368,111 @@ def create_final_prompt(content_data, file_type, mode, style_name, style_details
         st.error(f"Erro no cérebro: {e}")
         return None, None
 
+def _build_gemini_image_config(aspect_ratio: str):
+    """Cria config para Gemini Image/Nano Banana com compatibilidade entre versoes do SDK."""
+    try:
+        text_modality = types.Modality.TEXT
+        image_modality = types.Modality.IMAGE
+    except Exception:
+        text_modality = "TEXT"
+        image_modality = "IMAGE"
+
+    try:
+        return types.GenerateContentConfig(
+            response_modalities=[text_modality, image_modality],
+            image_config=types.ImageConfig(aspect_ratio=aspect_ratio),
+        )
+    except Exception:
+        return types.GenerateContentConfig(response_modalities=[text_modality, image_modality])
+
+
+def _extract_image_bytes_from_gemini_response(response):
+    """Extrai bytes de imagem do retorno generate_content, cobrindo variacoes do SDK."""
+    parts = []
+    try:
+        if getattr(response, "candidates", None):
+            first_candidate = response.candidates[0]
+            if getattr(first_candidate, "content", None) and getattr(first_candidate.content, "parts", None):
+                parts = first_candidate.content.parts
+    except Exception:
+        parts = []
+
+    if not parts:
+        try:
+            parts = response.parts
+        except Exception:
+            parts = []
+
+    for part in parts:
+        inline_data = getattr(part, "inline_data", None)
+        if inline_data and getattr(inline_data, "data", None):
+            return inline_data.data
+    return None
+
+
 def generate_image_pixels(prompt_text, aspect_ratio, reference_image=None):
     ar = "1:1"
     if "16:9" in aspect_ratio: ar = "16:9"
     elif "9:16" in aspect_ratio: ar = "9:16"
     elif "4:3" in aspect_ratio: ar = "4:3"
+    elif "3:4" in aspect_ratio: ar = "3:4"
 
-    # Tenta na região principal e em regiões de fallback para imagem.
-    tried_locations = []
-    client_by_location = [(LOCATION, client)]
-    for fallback_loc in IMAGE_FALLBACK_LOCATIONS:
-        if fallback_loc != LOCATION:
-            try:
-                client_by_location.append((fallback_loc, build_client_for_location(fallback_loc)))
-            except Exception:
-                continue
+    generation_contents = [types.Part.from_text(text=f"{prompt_text}\n\nRequired aspect ratio: {ar}.")]
+    if reference_image:
+        generation_contents.append(reference_image)
 
-    for loc, loc_client in client_by_location:
-        tried_locations.append(loc)
-        available_image_models = get_available_image_models_for_client(loc_client)
-        if available_image_models:
-            candidate_models = [MODELO_IMAGEM_FIXO] + [m for m in available_image_models if m != MODELO_IMAGEM_FIXO]
-        else:
-            candidate_models = [MODELO_IMAGEM_FIXO]
+    discovered = get_available_image_models()
+    candidate_models = []
+    for model_name in [MODELO_IMAGEM_FIXO] + NANO_BANANA_FALLBACK_MODELS + discovered:
+        if model_name in NANO_BANANA_MODELS and model_name not in candidate_models:
+            candidate_models.append(model_name)
+    if not candidate_models:
+        candidate_models = NANO_BANANA_MODELS[:]
+
+    image_locations = []
+    for loc in NANO_BANANA_LOCATIONS + [LOCATION, "global"]:
+        if loc and loc not in image_locations:
+            image_locations.append(loc)
+
+    tried = []
+    last_error = None
+    for loc in image_locations:
+        try:
+            loc_client = client if loc == LOCATION else build_client_for_location(loc)
+        except Exception as e:
+            last_error = e
+            continue
 
         for model_name in candidate_models:
+            tried.append(f"{model_name} @ {loc}")
             try:
-                response = loc_client.models.generate_images(
+                response = loc_client.models.generate_content(
                     model=model_name,
-                    prompt=prompt_text,
-                    config=types.GenerateImagesConfig(
-                        number_of_images=1,
-                        aspect_ratio=ar,
-                    ),
+                    contents=generation_contents,
+                    config=_build_gemini_image_config(ar),
                 )
-                if response.generated_images:
-                    return response.generated_images[0].image.image_bytes
+                image_bytes = _extract_image_bytes_from_gemini_response(response)
+                if image_bytes:
+                    return image_bytes
+
+                last_error = RuntimeError(f"{model_name} @ {loc} nao retornou imagem.")
+                continue
             except Exception as e:
+                last_error = e
                 error_text = str(e).lower()
-                if any(k in error_text for k in ["429", "quota", "resource_exhausted", "not found", "unsupported"]):
+                if any(k in error_text for k in [
+                    "429", "quota", "resource_exhausted", "not found", "not_found",
+                    "unsupported", "invalid_argument", "invalid argument", "permission", "403"
+                ]):
                     continue
-                st.error(f"Erro Motor Visual ({model_name} @ {loc}): {e}")
+                st.error(f"Erro Motor Visual Nano Banana ({model_name} @ {loc}): {e}")
                 return None
 
     st.error(
-        "Erro Motor Visual: nenhum modelo Imagen disponível/compatível no projeto-região atual "
-        f"({LOCATION}) ou quota excedida. Regiões tentadas: {', '.join(tried_locations)}. "
-        "Ajuste GCP_LOCATION/GCP_IMAGE_FALLBACK_LOCATIONS, habilite modelo Imagen no projeto "
-        "ou solicite aumento de quota."
+        "Erro Motor Visual Nano Banana: nenhum modelo obrigatorio retornou imagem. "
+        f"Tentativas: {', '.join(tried)}. Ultimo erro: {last_error}. "
+        "Verifique se o projeto tem acesso aos modelos Gemini Image/Nano Banana na Vertex AI, "
+        "billing ativo e Vertex AI API habilitada."
     )
     return None
 
@@ -408,8 +484,8 @@ st.title("🟡 HELIOS // DYNAMIC STUDIO v9.6")
 st.markdown(f"""
 <div class="instruction-box">
     <strong>SISTEMA INTELIGENTE ATIVO:</strong><br>
-    Região: <code>{LOCATION}</code> | Cérebro: <code>{MODELO_TEXTO_FIXO}</code> | Pintor: <code>{MODELO_IMAGEM_FIXO}</code><br>
-    Descoberta dinâmica de modelos e cotas ativa para a região configurada.
+    Região: <code>{LOCATION}</code> | Cérebro: <code>{MODELO_TEXTO_FIXO}</code> | Pintor obrigatório: <code>{MODELO_IMAGEM_FIXO}</code><br>
+    Imagem via Gemini Image / Nano Banana Pro ou Nano Banana 2. Sem fallback para Imagen.
 </div>
 """, unsafe_allow_html=True)
 
@@ -483,4 +559,4 @@ with col2:
         st.download_button("BAIXAR PNG", data=st.session_state.last_image_bytes, file_name="helios.png", type="secondary", use_container_width=True)
     else: st.info("Aguardando comando...")
 
-st.markdown("""<div class="footer">CONEXÃO: VERTEX-AI-ENTERPRISE | DATASET US-CENTRAL1 ACTIVE</div>""", unsafe_allow_html=True)
+st.markdown("""<div class="footer">CONEXÃO: VERTEX-AI-ENTERPRISE | GEMINI IMAGE / NANO BANANA ACTIVE</div>""", unsafe_allow_html=True)
