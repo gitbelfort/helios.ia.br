@@ -5,7 +5,7 @@ import time
 import json
 from google import genai
 from google.genai import types
-from google.oauth2 import service_account # <-- NOVA IMPORTAÇÃO CRUCIAL
+from google.oauth2 import service_account
 from PIL import Image
 import io
 import pypdf
@@ -103,7 +103,7 @@ if not st.session_state.logged_in:
     st.stop()
 
 # ==============================================================================
-# HELIOS v9.4 CORE (VERTEX AI ENTERPRISE FIX)
+# HELIOS v9.5 CORE (VERTEX AI - SCOPE FIX)
 # ==============================================================================
 
 # CONFIGURAÇÕES DA VERTEX AI
@@ -116,10 +116,11 @@ MODELO_IMAGEM_FIXO = "imagen-3.0-generate-001"
 # 1. Carregar o Dicionário do Secrets
 creds_dict = json.loads(st.secrets["GCP_SERVICE_ACCOUNT_JSON"])
 
-# 2. CONVERTER o Dicionário em Credenciais Oficiais da Google
-credenciais_oficiais = service_account.Credentials.from_service_account_info(creds_dict)
+# 2. CONVERTER o Dicionário em Credenciais Oficiais INJETANDO O ESCOPO NECESSÁRIO
+SCOPES = ['https://www.googleapis.com/auth/cloud-platform']
+credenciais_oficiais = service_account.Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
 
-# 3. Instanciar o Cliente Enterprise com as credenciais corretas
+# 3. Instanciar o Cliente Enterprise com as credenciais corretas e escopo definido
 try:
     client = genai.Client(
         vertexai=True, 
@@ -209,7 +210,8 @@ def initial_analysis(content_data, file_type):
         c_part = types.Part.from_text(text=content_data) if file_type == "TEXT" else content_data
         response = generate_content_with_retry(model_name=MODELO_TEXTO_FIXO, contents=[types.Part.from_text(text="Identifique o conteúdo detalhadamente em Português."), c_part])
         return response.text
-    except Exception: return "Conteúdo carregado."
+    except Exception as e: 
+        return f"Erro na análise: {e}" # Agora mostrará o erro exato na tela em vez de "Conteúdo carregado." se houver problema
 
 def create_final_prompt(content_data, file_type, mode, style_name, style_details, idioma, densidade, formato_selecionado, colorize=False):
     instrucao_densidade = "Use MINIMAL TEXT. High visual impact." if densidade == "Conciso" else "Use HIGH TEXT DENSITY." if densidade == "Detalhado" else "Balanced text and visuals."
@@ -289,9 +291,9 @@ def show_full_image(image_bytes, token_info):
 # ==============================================================================
 # UI PRINCIPAL
 # ==============================================================================
-st.title("🟡 HELIOS // ENTERPRISE v9.4")
+st.title("🟡 HELIOS // ENTERPRISE v9.5")
 
-st.markdown("""<div class="instruction-box"><strong>MANUAL v9.4:</strong> Sistema conectado à Vertex AI (us-central1). Alta cota de processamento ativa e Motor Autenticado.</div>""", unsafe_allow_html=True)
+st.markdown("""<div class="instruction-box"><strong>MANUAL v9.5:</strong> Sistema conectado à Vertex AI (us-central1). Escopo de autenticação Cloud Platform autorizado.</div>""", unsafe_allow_html=True)
 
 col1, col2 = st.columns([1, 1])
 reset_k = st.session_state.reset_trigger
