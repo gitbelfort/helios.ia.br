@@ -1,6 +1,7 @@
 import streamlit as st
 import os
 import datetime
+import time
 from google import genai
 from google.genai import types
 from PIL import Image
@@ -33,22 +34,13 @@ st.markdown("""
     /* Senha */
     .stTextInput > div > div > input { background-color: #111; color: #00FF00; border: 1px solid #00FF00; text-align: center; font-size: 1.2em; }
 
-    /* =========================================
-       BOTÕES TÁTICOS (MENORES E LEVES)
-       ========================================= */
+    /* BOTÕES TÁTICOS (MENORES E LEVES) */
     button[kind="secondary"] { 
-        background-color: transparent !important; 
-        border: 1px solid #FFD700 !important; 
-        border-radius: 0px; 
-        transition: 0.2s; 
-        padding: 0.2rem 0.5rem !important; /* Diminuído */
-        min-height: 35px !important;
+        background-color: transparent !important; border: 1px solid #FFD700 !important; border-radius: 0px; 
+        transition: 0.2s; padding: 0.2rem 0.5rem !important; min-height: 35px !important;
     }
     button[kind="secondary"], button[kind="secondary"] * {
-        color: #FFD700 !important; 
-        font-weight: normal; 
-        font-size: 0.85rem !important; /* Fonte menor */
-        text-transform: uppercase;
+        color: #FFD700 !important; font-weight: normal; font-size: 0.85rem !important; text-transform: uppercase;
     }
     button[kind="secondary"]:hover, button[kind="secondary"]:focus, button[kind="secondary"]:active { 
         background-color: #FFD700 !important; box-shadow: 0 0 10px #FFD700 !important;
@@ -58,18 +50,11 @@ st.markdown("""
     }
 
     button[kind="primary"] { 
-        background-color: transparent !important; 
-        border: 1px solid #00FF00 !important; 
-        border-radius: 0px; 
-        transition: 0.2s; 
-        padding: 0.2rem 0.5rem !important; /* Diminuído */
-        min-height: 35px !important;
+        background-color: transparent !important; border: 1px solid #00FF00 !important; border-radius: 0px; 
+        transition: 0.2s; padding: 0.2rem 0.5rem !important; min-height: 35px !important;
     }
     button[kind="primary"], button[kind="primary"] * {
-        color: #00FF00 !important; 
-        font-weight: bold; 
-        font-size: 0.85rem !important; /* Fonte menor */
-        text-transform: uppercase;
+        color: #00FF00 !important; font-weight: bold; font-size: 0.85rem !important; text-transform: uppercase;
     }
     button[kind="primary"]:hover, button[kind="primary"]:focus, button[kind="primary"]:active { 
         background-color: #00FF00 !important; box-shadow: 0 0 10px #00FF00 !important;
@@ -78,15 +63,10 @@ st.markdown("""
         color: #000000 !important; 
     }
     
-    /* =========================================
-       CORREÇÃO DO BOTÃO DE UPLOAD (BROWSE FILES)
-       ========================================= */
+    /* CORREÇÃO DO BOTÃO DE UPLOAD (BROWSE FILES) */
     [data-testid='stFileUploader'] { border: 1px dashed #FFD700; padding: 15px; background-color: #050505; }
     [data-testid='stFileUploader'] button {
-        background-color: #111 !important;
-        color: #FFD700 !important;
-        border: 1px solid #FFD700 !important;
-        transition: 0.2s;
+        background-color: #111 !important; color: #FFD700 !important; border: 1px solid #FFD700 !important; transition: 0.2s;
     }
     [data-testid='stFileUploader'] button:hover, [data-testid='stFileUploader'] button:focus, [data-testid='stFileUploader'] button:active {
         background-color: #FFD700 !important;
@@ -129,14 +109,13 @@ if not st.session_state.logged_in:
     st.stop()
 
 # ==============================================================================
-# HELIOS v9.1 CORE 
+# HELIOS v9.2 CORE (SHIELD UPDATE & PRO ENGINE)
 # ==============================================================================
 
 CHAVE_MESTRA = None 
 MODELO_IMAGEM_FIXO = "gemini-3-pro-image-preview" 
-MODELO_TEXTO_FIXO = "gemini-2.0-flash" # Estável e Extremamente Poderoso
+MODELO_TEXTO_FIXO = "gemini-2.0-flash" 
 
-# --- KNOWLEDGE BASE (Baseado nos seus PDFs) ---
 KNOWLEDGE_BASE = """
     ACT AS THE WORLD'S ELITE PROMPT ENGINEER AND CINEMATOGRAPHER. Use advanced terminology from photography and cinema.
     - LENSES & CAMERA: 30mm lens, 85mm portrait lens, f/1.4 aperture for shallow depth of field (bokeh), f/11 for sharp landscapes. High shutter speed for freezing action.
@@ -184,7 +163,27 @@ if not api_key:
 
 client = genai.Client(api_key=api_key, http_options={"api_version": "v1beta"})
 
-# --- FUNÇÕES NÚCLEO ---
+# --- 🛡️ ESCUDO ANTI-429 (EXPONENTIAL BACKOFF) ---
+def generate_content_with_retry(model_name, contents, config=None, max_retries=4):
+    """Envolve a chamada da API com retentativas automáticas em caso de congestionamento (429)."""
+    delay = 2 # Começa esperando 2 segundos
+    for attempt in range(max_retries):
+        try:
+            if config:
+                return client.models.generate_content(model=model_name, contents=contents, config=config)
+            else:
+                return client.models.generate_content(model=model_name, contents=contents)
+        except Exception as e:
+            error_msg = str(e).lower()
+            if "429" in error_msg or "resource_exhausted" in error_msg or "quota" in error_msg:
+                if attempt == max_retries - 1:
+                    raise e # Se falhar na última tentativa, mostra o erro
+                time.sleep(delay)
+                delay *= 2 # Dobra o tempo de espera (2s, 4s, 8s)
+            else:
+                raise e # Se for outro erro (ex: 400 Bad Request), levanta na hora
+
+# --- FUNÇÕES NÚCLEO (USANDO O ESCUDO) ---
 def process_uploaded_file(uploaded_file):
     try:
         if uploaded_file.type in ["image/png", "image/jpeg", "image/jpg", "image/webp"]:
@@ -217,8 +216,8 @@ def verify_text_safety(text_content):
     - RESUME/ARTICLE -> Output exactly "SAFE_CONTENT".
     """
     try:
-        response = client.models.generate_content(
-            model=MODELO_TEXTO_FIXO,
+        response = generate_content_with_retry(
+            model_name=MODELO_TEXTO_FIXO,
             contents=[types.Part.from_text(text=security_prompt), types.Part.from_text(text=text_content[:20000])]
         )
         result = response.text.strip()
@@ -230,7 +229,10 @@ def verify_text_safety(text_content):
 def initial_analysis(content_data, file_type):
     try:
         c_part = types.Part.from_text(text=content_data) if file_type == "TEXT" else content_data
-        response = client.models.generate_content(model=MODELO_TEXTO_FIXO, contents=[types.Part.from_text(text="Identifique o conteúdo detalhadamente em Português."), c_part])
+        response = generate_content_with_retry(
+            model_name=MODELO_TEXTO_FIXO, 
+            contents=[types.Part.from_text(text="Identifique o conteúdo detalhadamente em Português."), c_part]
+        )
         return response.text
     except Exception: return "Conteúdo carregado."
 
@@ -263,7 +265,7 @@ def create_final_prompt(content_data, file_type, mode, style_name, style_details
     
     try:
         model_input.insert(0, types.Part.from_text(text=full_prompt))
-        response = client.models.generate_content(model=MODELO_TEXTO_FIXO, contents=model_input)
+        response = generate_content_with_retry(model_name=MODELO_TEXTO_FIXO, contents=model_input)
         return response.text, response.usage_metadata
     except Exception as e:
         st.error(f"Erro no cérebro: {e}")
@@ -279,17 +281,19 @@ def generate_image_pixels(prompt_text, aspect_ratio, reference_image=None):
     generation_contents = [types.Part.from_text(text=prompt_text)]
     if reference_image: generation_contents.append(reference_image)
 
+    config_img = types.GenerateContentConfig(response_modalities=["IMAGE"], image_config=types.ImageConfig(aspect_ratio=ar))
+
     try:
-        response = client.models.generate_content(
-            model=MODELO_IMAGEM_FIXO,
+        response = generate_content_with_retry(
+            model_name=MODELO_IMAGEM_FIXO,
             contents=generation_contents,
-            config=types.GenerateContentConfig(response_modalities=["IMAGE"], image_config=types.ImageConfig(aspect_ratio=ar))
+            config=config_img
         )
         for part in response.parts:
             if part.inline_data: return part.inline_data.data
         return None
     except Exception as e:
-        st.error(f"Erro no Motor Visual: {e}")
+        st.error(f"Erro no Motor Visual (API bloqueada ou esgotada mesmo após retentativas): {e}")
         return None
 
 def factory_generate_prompt(task_type, user_request, extra_params=""):
@@ -307,7 +311,7 @@ def factory_generate_prompt(task_type, user_request, extra_params=""):
     - Do NOT write conversational filler.
     """
     try:
-        response = client.models.generate_content(model=MODELO_TEXTO_FIXO, contents=system_prompt)
+        response = generate_content_with_retry(model_name=MODELO_TEXTO_FIXO, contents=[types.Part.from_text(text=system_prompt)])
         return response.text
     except Exception as e: return f"Erro ao forjar prompt: {e}"
 
@@ -323,15 +327,15 @@ def show_full_image(image_bytes, token_info):
 # ==============================================================================
 # UI PRINCIPAL
 # ==============================================================================
-st.title("🟡 HELIOS // UNIVERSAL STUDIO v9.1")
+st.title("🟡 HELIOS // UNIVERSAL STUDIO v9.2")
 
 st.markdown(f"""
 <div class="instruction-box">
-    <strong>MANUAL DE OPERAÇÕES v9.1:</strong>
+    <strong>MANUAL DE OPERAÇÕES v9.2 (SHIELD UPDATE):</strong>
     <ul style="margin-bottom: 0;">
         <li><strong>1. Input Universal:</strong> Suba seu arquivo (PDF/TXT/DOC) ou imagem.</li>
         <li><strong>2. Modos:</strong> Re-Imagine, Infográfico, ou Restauração Ultra 8K.</li>
-        <li><strong>3. Fábrica de Prompts (Abaixo):</strong> Utilize o motor <em>Gemini 2.0 Flash</em> para criar prompts de nível Hollywood para Imagens e Vídeos.</li>
+        <li><strong>3. Fábrica de Prompts (Abaixo):</strong> Crie prompts de nível Hollywood para Imagens e Vídeos com proteção anti-travamento.</li>
         <li style="color: #00FF00; font-weight: bold; margin-top: 5px;">DESTAQUE: Envie seu currículo e visualize a jornada da sua carreira em uma imagem épica!</li>
     </ul>
 </div>
@@ -354,7 +358,7 @@ with col1:
             st.session_state.clean_prompt_content = None
             st.session_state.original_image_part = None
             
-            with st.spinner("VERIFICANDO INTEGRIDADE..."):
+            with st.spinner("VERIFICANDO INTEGRIDADE E CONEXÃO..."):
                 content_raw, ftype = process_uploaded_file(uploaded_file)
                 if content_raw == "LIMIT_ERROR": st.error(f"⛔ {ftype}")
                 elif content_raw:
@@ -383,7 +387,6 @@ with col1:
     colorizar_restauracao = False
     
     if st.session_state.file_type_detected == "IMAGE":
-        # SUBSTITUÍ O RADIO POR SELECTBOX PARA FICAR MAIS LIMPO E COMPACTO
         modo_imagem = st.selectbox("MODO DE OPERAÇÃO DA IMAGEM", ["APLICAR ESTILO VISUAL (RE-IMAGINE)", "CRIAR INFOGRÁFICO EXPLICATIVO", "RESTAURAR FOTO ANTIGA (BETA)"], key=f"mode_{reset_k}")
         if "RESTAURAR" in modo_imagem:
             is_restoring = True
@@ -404,7 +407,7 @@ with col1:
     with b_col1:
         pode_gerar = st.session_state.security_check_passed
         if st.button("GERAR IMAGEM", type="primary", use_container_width=True, disabled=not pode_gerar, key=f"gen_{reset_k}"):
-            with st.spinner("RENDERIZANDO PIXELS..."):
+            with st.spinner("RENDERIZANDO PIXELS (Pode levar alguns segundos extras se a rede estiver cheia)..."):
                 safe_content = st.session_state.clean_prompt_content
                 if safe_content:
                     final_prompt, tokens = create_final_prompt(safe_content, st.session_state.file_type_detected, modo_imagem, estilo, ESTILOS[estilo], lang, dens, fmt, colorizar_restauracao)
@@ -442,7 +445,6 @@ with col2:
 st.markdown("---")
 st.header(">> 4. FÁBRICA DE PROMPTS (NANO BANANA & VEO 3)")
 
-# SUBSTITUIÇÃO DE TABS POR SELECTBOX (MAIS LIMPO)
 modo_factory = st.selectbox("SELECIONE A FERRAMENTA DE ENGENHARIA:", ["GERADOR DE IMAGEM", "GERADOR DE VÍDEO (CENA ÚNICA)", "ROTEIRISTA DE FILME (MÚLTIPLAS CENAS)"], key=f"fac_{reset_k}")
 st.markdown("<br>", unsafe_allow_html=True)
 
@@ -464,7 +466,6 @@ if modo_factory == "GERADOR DE IMAGEM":
         st.code(st.session_state.generated_prompt_img, language="markdown")
         if st.button("RENDERIZAR ESTE PROMPT NO HELIOS AGORA", type="primary", key=f"f1_render_{reset_k}"):
             with st.spinner("Enviando para o Motor Visual..."):
-                # Mapeia os formatos simples do prompt para o nome completo do selectbox principal
                 map_fmt = {"16:9": "16:9 (Paisagem Widescreen)", "9:16": "9:16 (Vertical/Stories)", "1:1": "1:1 (Quadrado)", "4:3": "4:3 (Paisagem Clássica)", "3:4": "3:4 (Retrato Clássico)"}
                 img_bytes = generate_image_pixels(st.session_state.generated_prompt_img, map_fmt.get(f_fmt, "16:9"))
                 if img_bytes:
