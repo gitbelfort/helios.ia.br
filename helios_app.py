@@ -112,7 +112,9 @@ def get_best_models():
         return "gemini-2.0-flash-exp", "imagen-3.0-generate-001"
 
 # Atribuição Dinâmica
-MODELO_TEXTO_FIXO, MODELO_IMAGEM_FIXO = get_best_models()
+# MODELO_TEXTO_FIXO, MODELO_IMAGEM_FIXO = get_best_models()
+MODELO_TEXTO_FIXO = "gemini-1.5-pro-002"
+MODELO_IMAGEM_FIXO = "imagen-3.0-generate-001"
 
 # --- ESTADOS E LOGS ---
 keys_to_init = [
